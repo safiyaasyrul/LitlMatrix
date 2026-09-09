@@ -276,10 +276,13 @@ export const buildManuscriptAbstract = ({
     `The literature represented in this review addresses ${topic}.`;
   const knowledgeGap = firstCompleteSentence(protocol.knowledgeGap, 28);
   const researchQuestion = cleanText(protocol.primaryResearchQuestions?.[0])
-    .replace(/^RQ\d+:\s*/i, "");
+    .replace(/^RQ\d+(?:\s*\([^)]*\))?\s*:\s*/i, "");
+  const researchQuestionFocus = limitWords(researchQuestion, 28)
+    .replace(/[?!.]+$/, "")
+    .replace(/^./, (letter) => letter.toLowerCase());
   const objective =
-    researchQuestion
-      ? `This review synthesises the available evidence on ${topic} to clarify the principal patterns and gaps documented in the literature, with particular attention to ${limitWords(researchQuestion, 28)}.`
+    researchQuestionFocus
+      ? `This review synthesises the available evidence on ${topic} to clarify the principal patterns and gaps documented in the literature, with particular attention to ${researchQuestionFocus}.`
       : `This review synthesises the available evidence on ${topic} to clarify the principal patterns and gaps documented in the literature.`;
   const informationSourceNames = protocol.informationSources
     .map((item) => cleanText(item.name))
@@ -348,18 +351,18 @@ export const buildManuscriptAbstract = ({
     `Collectively, the included evidence defines the current scope of work on ${topic}`,
     knowledgeGap ? `the review addresses the documented gap that ${limitWords(knowledgeGap, 28).replace(/[.!?]$/, "")}` : "",
     "and the available record-level information supports cautious narrative interpretation rather than claims beyond the supplied evidence",
-    "because full-text retrieval and eligibility assessment were not performed",
+    "because the review is based on record-level information and does not claim eligibility assessment beyond the recorded screening",
   ].filter(Boolean).join("; ") + ".";
 
   const abstract: ManuscriptAbstract = {
     text: [
-      `Background: ${background}`,
-      `Objective: ${objective}`,
-      `Methods: ${methods}`,
-      `Results: ${results}`,
-      `Conclusion: ${conclusion}`,
+      ["Background", background],
+      ["Objective", objective],
+      ["Methods", methods],
+      ["Results", results],
+      ["Conclusion", conclusion],
     ]
-      .map(endSentence)
+      .map(([label, value]) => `${label}: ${endSentence(value)}`)
       .join(" "),
     keywords: buildKeywords(topic, includedRecords, characteristics, synthesis),
   };

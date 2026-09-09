@@ -110,6 +110,7 @@ export default function ScreeningSection({
     if (unresolvedRecords.length === 0) {
       setErrorMessage("All imported records already have screening decisions. No new AI calls were made.");
       screeningRunRef.current = false;
+      setRunningScreening(false);
       return;
     }
     const recordsToScreen = unresolvedRecords;

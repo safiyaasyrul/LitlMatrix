@@ -80,6 +80,28 @@ const getEvidenceLandscape = (records: SLRRecord[]): EvidenceLandscape => {
 const summarizeLandscape = (counts: LandscapeCount[], limit = 4) =>
   counts.slice(0, limit).map((item) => `${item.label} (${item.count})`).join(", ");
 
+const getTitleKeywords = (title: string) => {
+  const stopWords = new Set([
+    "a", "an", "and", "for", "from", "of", "on", "the", "to",
+    "narrative", "systematic", "synthesis", "thematic", "review",
+  ]);
+
+  return title
+    .replace(/[^A-Za-z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .map((word) => word.replace(/^-+|-+$/g, ""))
+    .filter((word) =>
+      word.length >= 4 &&
+      !stopWords.has(word.toLowerCase()) &&
+      !/^[A-Z0-9]{2,8}$/.test(word) &&
+      /[aeiouy]/i.test(word)
+    )
+    .map((word) => word.toLowerCase())
+    .filter((word, index, words) => words.indexOf(word) === index)
+    .slice(0, 6)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
+};
+
 const getCharacteristicsLandscape = (records: SLRRecord[], characteristics: StudyCharacteristic[]) => {
   const hasExtractedCharacteristics = characteristics.length > 0;
   const unavailable = "Not reported in supplied records";
@@ -116,10 +138,10 @@ export default function FullReviewReport({
 }: FullReviewReportProps) {
   const [copied, setCopied] = useState(false);
   const configuredTitle = protocol.title?.trim();
-  const manuscriptTitle = configuredTitle && !/^untitled systematic review$/i.test(configuredTitle)
-    ? configuredTitle
-    : synthesis.suggestedTitle?.trim()
-    || "Systematic Literature Review Manuscript";
+  const manuscriptTitle = synthesis.suggestedTitle?.trim()
+    || (configuredTitle && !/^untitled systematic review$/i.test(configuredTitle)
+      ? configuredTitle
+      : "Systematic Literature Review Manuscript");
   const evidenceLandscape = getEvidenceLandscape(includedRecords);
   const characteristicsLandscape = getCharacteristicsLandscape(includedRecords, characteristics);
   const recordGroundedRationale = includedRecords.length > 0
@@ -194,7 +216,9 @@ export default function FullReviewReport({
     
     const res = `${includedRecords.length} records were retained for synthesis from ${counts.afterDedup || counts.screened || includedRecords.length} records after deduplication. Publication years were distributed as follows: ${summarizeLandscape(evidenceLandscape.yearCounts) || "no publication-year pattern was available"}. The descriptive evidence landscape was organized by study categories, contexts, methodological approaches, and reported outcome types.`;
     const concl = `The included literature presents a narrative and thematic evidence base organized around the reported methods, technologies, and outcomes. Interpretation is anchored to the findings and publication characteristics of the included records.`;
+    const titleKeywords = getTitleKeywords(manuscriptTitle);
     const keywords = [
+      ...titleKeywords,
       protocol.reviewType || "Systematic Literature Review",
       "Evidence Synthesis",
       "Narrative Synthesis",

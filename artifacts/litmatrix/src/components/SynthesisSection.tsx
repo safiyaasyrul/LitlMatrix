@@ -151,48 +151,64 @@ const getThemeTerms = (studies: SynthesisStudy[]) => {
     .map(([word]) => word);
 };
 
-const getProtocolSubject = (protocol: SLRProtocol) => {
-  const raw = cleanText(protocol?.title);
-  if (!raw) return "";
+const titleStopWords = new Set([
+  "about", "across", "after", "among", "analysis", "approach", "approaches",
+  "based", "between", "clinical", "data", "early", "evidence", "from",
+  "health", "included", "literature", "model", "models", "outcomes",
+  "reported", "review", "studies", "study", "systematic", "using",
+  "with", "within", "type", "types",
+]);
 
-  return raw
-    .replace(/^systematic\s+literature\s+review\s*[:\-]?\s*/i, "")
-    .replace(/^a\s+systematic\s+review\s+of\s+/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
+const getRecordTitleTerms = (records: SLRRecord[]) => {
+  const documentFrequency = new Map<string, number>();
+  const minimumFrequency = records.length >= 4 ? 2 : 1;
+
+  records.forEach((record) => {
+    const seen = new Set<string>();
+    const rawTitle = cleanText(record.title).replace(/&/g, " and ");
+    rawTitle.match(/[A-Za-z][A-Za-z'-]*/g)?.forEach((rawWord) => {
+      const word = rawWord.toLowerCase().replace(/^['-]+|['-]+$/g, "");
+      const looksLikeAbbreviation =
+        /^[A-Z0-9]{2,8}$/.test(rawWord) ||
+        word.length < 4 ||
+        !/[aeiouy]/.test(word) ||
+        /(.)\1{2,}/.test(word);
+
+      if (
+        !word ||
+        titleStopWords.has(word) ||
+        looksLikeAbbreviation ||
+        seen.has(word)
+      ) {
+        return;
+      }
+
+      seen.add(word);
+    });
+
+    seen.forEach((word) => {
+      documentFrequency.set(word, (documentFrequency.get(word) || 0) + 1);
+    });
+  });
+
+  return Array.from(documentFrequency.entries())
+    .filter(([, frequency]) => frequency >= minimumFrequency)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 4)
+    .map(([word]) => word.charAt(0).toUpperCase() + word.slice(1));
 };
 
-const suggestReviewTitles = (
-  protocol: SLRProtocol,
-  studies: SynthesisStudy[],
-  subtopics: SynthesisResult["subtopics"]
-) => {
-  const protocolSubject = getProtocolSubject(protocol);
-  const themeTerms = Array.from(
-    new Set(
-      (subtopics || [])
-        .map((topic) => cleanText(topic?.title).replace(/^\d+\.\s*/, "").trim())
-        .filter(Boolean)
-    )
-  );
+const suggestReviewTitles = (records: SLRRecord[]) => {
+  const evidenceTerms = getRecordTitleTerms(records);
+  const subject = evidenceTerms.length >= 2
+    ? evidenceTerms.join(", ")
+    : "The Included Literature";
 
-  const evidenceTerms = getThemeTerms(studies)
-    .slice(0, 3)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
-
-  const subject = protocolSubject ||
-    (evidenceTerms.length ? evidenceTerms.join(", ") : "The Included Literature");
-
-  const titles = [
+  return Array.from(new Set([
     `${subject}: A Narrative and Thematic Synthesis`,
-    `A Systematic Review of ${subject}`,
-    `${subject}: Evidence and Emerging Themes`,
-    themeTerms.length > 0
-      ? `${subject}: A Thematic Synthesis of ${themeTerms.slice(0, 2).join(" and ")}`
-      : `${subject}: A Structured Synthesis of the Evidence`,
-  ];
-
-  return Array.from(new Set(titles.map((title) => title.trim())));
+    `A PRISMA 2020 Systematic Review of ${subject}`,
+    `${subject}: Methods, Contexts, and Reported Outcomes`,
+  ]));
 };
 
 /*
@@ -412,13 +428,8 @@ export default function SynthesisSection({
   );
 
   const titleOptions = useMemo(
-    () =>
-      suggestReviewTitles(
-        protocol,
-        synthesisStudies,
-        synthesis.subtopics || []
-      ),
-    [protocol, synthesisStudies, synthesis.subtopics]
+    () => suggestReviewTitles(includedRecords),
+    [includedRecords]
   );
 
   const suggestedTitle =
@@ -481,9 +492,7 @@ export default function SynthesisSection({
 
     const generated: SynthesisResult = {
       suggestedTitle: suggestReviewTitles(
-        protocol,
-        synthesisStudies,
-        fallbackTopics
+        includedRecords
       )[0],
       subtopics: fallbackTopics,
       keyFindingsTable: buildEvidenceTable(
@@ -550,11 +559,7 @@ ${JSON.stringify(studiesForAI, null, 2)}
 
       onUpdateSynthesis({
         ...synthesis,
-        suggestedTitle: suggestReviewTitles(
-          protocol,
-          synthesisStudies,
-          subtopics
-        )[0],
+        suggestedTitle: suggestReviewTitles(includedRecords)[0],
         subtopics,
         keyFindingsTable: buildEvidenceTable(
           synthesisStudies,

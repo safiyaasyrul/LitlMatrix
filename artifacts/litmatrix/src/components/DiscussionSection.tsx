@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { DiscussionSections, SLRProtocol, SynthesisResult, SLRRecord, StudyCharacteristic } from "../types/slr";
-import { Sparkles, BookOpen, Download, Copy, Check, AlertCircle, Zap, Layers, Quote } from "lucide-react";
+import { Sparkles, BookOpen, Download, Copy, Check, AlertCircle, Zap, Layers } from "lucide-react";
 import { callAI, parseJSONLoose } from "../utils/aiClient";
 
 interface DiscussionSectionProps {
@@ -217,25 +217,6 @@ Return ONLY a JSON object:
           </div>
         </div>
 
-        {/* Included Study Evidence Preview */}
-        {characteristics.length > 0 && (
-          <div className="pt-3 border-t border-slate-100 flex items-center gap-2 text-xs text-slate-600 flex-wrap">
-            <span className="font-semibold text-slate-800 flex items-center gap-1">
-              <Quote className="w-3.5 h-3.5 text-indigo-600" />
-              Synthesized Records ({characteristics.length} studies):
-            </span>
-            {characteristics.slice(0, 4).map((c, i) => (
-              <span key={i} className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded-md text-[11px] font-mono text-slate-800">
-                {c.authorYear}
-              </span>
-            ))}
-            {characteristics.length > 4 && (
-              <span className="text-[11px] text-slate-500 font-mono">
-                +{characteristics.length - 4} more
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       {/* 4 Editable Sections */}

@@ -597,16 +597,6 @@ Return ONLY a JSON array of objects with the exact schema:
               {loadingKw ? "Suggesting Academic Keywords..." : "AI Suggest Keywords & Synonyms"}
             </button>
           </div>
-           {stringsMessage && (
-             <div className={`flex items-start gap-2 rounded-lg border p-3 text-xs ${
-               stringsMessage.type === "success"
-                 ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                 : "border-amber-200 bg-amber-50 text-amber-900"
-             }`}>
-               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-               <span>{stringsMessage.text}</span>
-             </div>
-           )}
         </div>
 
         {/* Section 1: Keywords Management with Category Clusters, Deletion & Addition */}
@@ -911,6 +901,16 @@ Return ONLY a JSON array of objects with the exact schema:
               {loadingStrings ? "Synthesizing Exact Boolean Queries..." : "Generate Database Search Strings (Item 7)"}
             </button>
           </div>
+          {stringsMessage && (
+            <div className={`flex items-start gap-2 rounded-lg border p-3 text-xs ${
+              stringsMessage.type === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : "border-amber-200 bg-amber-50 text-amber-900"
+            }`}>
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{stringsMessage.text}</span>
+            </div>
+          )}
         </div>
       </div>
 

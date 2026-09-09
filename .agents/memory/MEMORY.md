@@ -4,3 +4,4 @@
 - [Narrative-first review workflow](narrative-first-review-workflow.md) — keep PRISMA, PICO/PICOC, screening, extraction, references, and narrative/thematic synthesis as defaults; optional quantitative or appraisal methods must not be forced.
 - [Paid access by email allowlist](paid-access-allowlist.md) — access is granted manually by verified email after off-platform payment; do not assume automatic billing entitlements.
 - [Citation and PRISMA export contract](citation-and-prisma-export.md) — keep style formatting and adapted flow counts shared across preview, print, Markdown, and Word exports.
+- [Search-string resilience](search-string-resilience.md) — database queries must remain usable when AI returns malformed, wrapped, partial, or failed output.

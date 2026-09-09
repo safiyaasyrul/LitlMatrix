@@ -249,8 +249,9 @@ export async function callAI(
 
   // 1. Replit-managed OpenAI integration. The key stays server-side.
   if (provider === "replit-managed") {
-    const res = await fetch("/prisma-api/openai/generate", {
+    const res = await fetch("/api/prisma/ai/generate", {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   SLRProtocol,
   SLRRecord,
@@ -94,6 +94,7 @@ const boundPersistedScreening = (
 ) => ({ ...decisions });
 
 export default function App() {
+  const hydrationReady = useRef(false);
   // Navigation State
   const [activeStage, setActiveStage] = useState<number>(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -225,52 +226,114 @@ export default function App() {
 
   // Local storage persistence effects
   useEffect(() => {
+    if (!hydrationReady.current) return;
     localStorage.setItem("slr_protocol_v1", JSON.stringify(protocol));
   }, [protocol]);
 
   useEffect(() => {
+    if (!hydrationReady.current) return;
     localStorage.setItem("slr_records_v1", JSON.stringify(records));
   }, [records]);
 
   useEffect(() => {
+    if (!hydrationReady.current) return;
     localStorage.setItem("slr_dupes_v1", JSON.stringify(dupesRemoved));
   }, [dupesRemoved]);
 
   useEffect(() => {
+    if (!hydrationReady.current) return;
     localStorage.setItem("slr_screening_v1", JSON.stringify(screening));
   }, [screening]);
 
   useEffect(() => {
+    if (!hydrationReady.current) return;
     localStorage.setItem("slr_chars_v1", JSON.stringify(characteristics));
   }, [characteristics]);
 
   useEffect(() => {
+    if (!hydrationReady.current) return;
     localStorage.setItem("slr_synthesis_v1", JSON.stringify(synthesis));
   }, [synthesis]);
 
   useEffect(() => {
+    if (!hydrationReady.current) return;
     localStorage.setItem("slr_discussion_v1", JSON.stringify(discussion));
   }, [discussion]);
 
   useEffect(() => {
+    if (!hydrationReady.current) return;
     localStorage.setItem("slr_checklist_v1", JSON.stringify(checklist));
   }, [checklist]);
 
   useEffect(() => {
+    if (!hydrationReady.current) return;
     localStorage.setItem("slr_prisma_s_checklist_v1", JSON.stringify(prismaSChecklist));
   }, [prismaSChecklist]);
 
   useEffect(() => {
+    if (!hydrationReady.current) return;
     localStorage.setItem("slr_roses_checklist_v1", JSON.stringify(rosesChecklist));
   }, [rosesChecklist]);
 
   useEffect(() => {
+    if (!hydrationReady.current) return;
     localStorage.setItem("slr_ai_keys_v1", JSON.stringify(keysConfig));
   }, [keysConfig]);
 
   const activeAIConfig = useMemo(() => {
     return getActiveAIConfig(keysConfig);
   }, [keysConfig]);
+
+  // Hydrate the server copy before allowing any debounced save to run.
+  useEffect(() => {
+    fetch("/api/prisma/workspace", { credentials: "same-origin" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((result) => {
+        const saved = result?.snapshot;
+        if (saved) {
+          setProtocol(saved.protocol ?? BLANK_PROTOCOL);
+          setRecords(saved.records ?? []);
+          setDupesRemoved(typeof saved.dupesRemoved === "number" ? saved.dupesRemoved : 0);
+          setScreening(saved.screening ?? {});
+          setCharacteristics(saved.characteristics ?? []);
+          setSynthesis(saved.synthesis ?? {
+            characteristicsTable: [],
+            metaAnalysisCategories: [],
+            forestPlotEstimates: [],
+            pooledEffectEstimate: undefined,
+            heterogeneityDiscussion: "",
+          });
+          setDiscussion(saved.discussion ?? {
+            item23aGeneralInterpretation: "",
+            item23bLimitationsOfEvidence: "",
+            item23cLimitationsOfReviewProcess: "",
+            item23dImplications: "",
+          });
+          setChecklist(saved.checklist ?? initialPrismaChecklist);
+          setPrismaSChecklist(saved.prismaSChecklist ?? initialPrismaSChecklist);
+          setRosesChecklist(saved.rosesChecklist ?? initialRosesChecklist);
+        }
+        hydrationReady.current = true;
+      }).catch(() => { hydrationReady.current = true; });
+  }, []);
+
+  // PostgreSQL is the durable workspace copy; localStorage remains the
+  // offline/migration cache used by the existing workbench.
+  useEffect(() => {
+    if (!hydrationReady.current) return;
+    const timer = window.setTimeout(async () => {
+      await fetch("/api/prisma/workspace", {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ snapshot: {
+          protocol, records, dupesRemoved, screening, characteristics, synthesis,
+          discussion, checklist, prismaSChecklist, rosesChecklist,
+        } }),
+      }).catch(() => undefined);
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [protocol, records, dupesRemoved, screening, characteristics, synthesis, discussion, checklist, prismaSChecklist, rosesChecklist]);
 
   // Derived included records
   const includedRecords = useMemo(() => {

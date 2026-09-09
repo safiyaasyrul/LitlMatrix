@@ -99,6 +99,10 @@ export function isOpenRouterApiKey(value?: string): boolean {
   return value?.trim().startsWith(OPENROUTER_KEY_PREFIX) ?? false;
 }
 
+export function isGoogleGeminiApiKey(value?: string): boolean {
+  return value?.trim().startsWith("AIza") ?? false;
+}
+
 function getConfiguredDirectProvider(keys: Partial<UserAIKeysConfig>): (typeof DIRECT_AI_PROVIDERS)[number] | undefined {
   return DIRECT_AI_PROVIDERS.find((provider) => Boolean(keys[provider]?.apiKey?.trim()));
 }
@@ -138,6 +142,23 @@ function enqueueOpenRouterRequest<T>(request: () => Promise<T>): Promise<T> {
 
 export function getActiveAIConfig(keys?: Partial<UserAIKeysConfig> | null): AIProviderConfig {
   if (!keys) return { provider: "replit-managed", model: "gpt-5.6-terra" };
+
+  // A Google AI Studio key is recognizable by its AIza prefix. If it was
+  // previously saved in another provider card, route it to Gemini rather than
+  // sending it to an incompatible OpenAI-compatible endpoint.
+  const activeSavedKey =
+    keys.activeProvider &&
+    keys.activeProvider !== "replit-managed" &&
+    keys.activeProvider !== "server-gemini"
+      ? keys[keys.activeProvider]?.apiKey
+      : undefined;
+  if (keys.activeProvider !== "gemini" && isGoogleGeminiApiKey(activeSavedKey)) {
+    return {
+      provider: "gemini",
+      apiKey: activeSavedKey?.trim(),
+      model: keys.gemini?.model || "gemini-3.7-flash",
+    };
+  }
 
   // The managed provider is the application default and must not be overridden
   // merely because an optional provider key remains saved in the browser.

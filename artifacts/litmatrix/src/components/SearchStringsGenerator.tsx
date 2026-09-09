@@ -36,6 +36,12 @@ interface KeywordItem {
   selected: boolean;
 }
 
+interface SearchStrategy {
+  database: string;
+  query: string;
+  filters: string;
+}
+
 const DEFAULT_SUBJECT_AREAS = [
   { code: "COMP", name: "Computer Science", wos: "Computer Science" },
   { code: "ENGI", name: "Engineering", wos: "Engineering" },
@@ -77,6 +83,92 @@ function buildWebOfScienceQuery(
   if (language === "English OR Malay") filters.push("LA=(ENGLISH OR MALAY)");
 
   return `TS=(${topic}) AND ${filters.join(" AND ")}`;
+}
+
+function quoteSearchTerm(term: string): string {
+  return `"${term.trim().replace(/["()]/g, "").replace(/\s+/g, " ")}"`;
+}
+
+function buildFallbackSearchStrategies(
+  keywords: KeywordItem[],
+  selectedSubjectAreas: string[],
+  publicationStage: "all" | "final" | "inpress",
+  yearFrom: number,
+  yearTo: number,
+  docType: string,
+  language: string,
+): SearchStrategy[] {
+  const selectedTerms = keywords
+    .filter((keyword) => keyword.selected && keyword.term.trim())
+    .map((keyword) => keyword.term.trim());
+  const uniqueTerms = Array.from(new Set(selectedTerms));
+  const conceptBlocks = Array.from(new Set(
+    keywords
+      .filter((keyword) => keyword.selected && keyword.term.trim())
+      .map((keyword) => keyword.category)
+  )).map((category) => {
+    const terms = keywords
+      .filter((keyword) => keyword.selected && keyword.term.trim() && keyword.category === category)
+      .map((keyword) => quoteSearchTerm(keyword.term));
+    return terms.length > 0 ? `(${terms.join(" OR ")})` : "";
+  }).filter(Boolean);
+  const topic = (conceptBlocks.length > 0
+    ? conceptBlocks
+    : [`(${uniqueTerms.map(quoteSearchTerm).join(" OR ")})`]
+  ).join(" AND ");
+  const scopusFilters = [
+    `PUBYEAR > ${yearFrom - 1}`,
+    `PUBYEAR < ${yearTo + 1}`,
+    selectedSubjectAreas.length > 0 ? `(${selectedSubjectAreas.map((code) => `SUBJAREA(${code})`).join(" OR ")})` : "",
+    publicationStage === "final" ? "PUBSTAGE(final)" : publicationStage === "inpress" ? "PUBSTAGE(aip)" : "",
+    docType === "Journal article" ? "DOCTYPE(ar)" : docType === "Article OR Conference Paper" ? "DOCTYPE(ar OR cp)" : "",
+    language === "English" ? "LANGUAGE(English)" : language === "English OR Malay" ? "LANGUAGE(English OR Malay)" : "",
+  ].filter(Boolean);
+  const scopusQuery = `TITLE-ABS-KEY(${topic})${scopusFilters.length ? ` AND ${scopusFilters.join(" AND ")}` : ""}`;
+  const wosQuery = buildWebOfScienceQuery(keywords, yearFrom, yearTo, docType, language);
+  const pubmedTopic = uniqueTerms.map((term) => `${quoteSearchTerm(term)}[Title/Abstract]`).join(" OR ") || "\"systematic review\"[Title/Abstract]";
+  const pubmedQuery = `(${pubmedTopic}) AND (${yearFrom}:${yearTo}[dp])${language === "English" ? " AND English[lang]" : language === "English OR Malay" ? " AND (English[lang] OR Malay[lang])" : ""}`;
+  const ieeeQuery = `(${uniqueTerms.map(quoteSearchTerm).join(" OR ") || "\"systematic review\""}) AND Publication Year: ${yearFrom}-${yearTo}`;
+  const googleQuery = uniqueTerms.map(quoteSearchTerm).join(" OR ") || "\"systematic review\"";
+  const commonFilters = `Years ${yearFrom}-${yearTo}, ${docType}, ${language}`;
+
+  return [
+    {
+      database: "Scopus",
+      query: scopusQuery,
+      filters: `${commonFilters}, ${selectedSubjectAreas.length > 0 ? `Subject areas: ${selectedSubjectAreas.join(", ")}` : "all subject areas"}, ${publicationStage}`,
+    },
+    {
+      database: "Web of Science",
+      query: wosQuery,
+      filters: `${commonFilters}, ${publicationStage}`,
+    },
+    {
+      database: "PubMed",
+      query: pubmedQuery,
+      filters: `${commonFilters}, ${publicationStage}`,
+    },
+    {
+      database: "IEEE Xplore",
+      query: ieeeQuery,
+      filters: `${commonFilters}, Journals & Conferences`,
+    },
+    {
+      database: "Google Scholar",
+      query: googleQuery,
+      filters: `Years ${yearFrom}-${yearTo}, ${language}`,
+    },
+  ];
+}
+
+function extractSearchStrategies(parsed: any): any[] {
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && typeof parsed === "object") {
+    for (const key of ["searchStrategies", "strategies", "results", "queries"]) {
+      if (Array.isArray(parsed[key])) return parsed[key];
+    }
+  }
+  return [];
 }
 
 export default function SearchStringsGenerator({
@@ -175,6 +267,7 @@ export default function SearchStringsGenerator({
   const [loadingKw, setLoadingKw] = useState(false);
   const [loadingStrings, setLoadingStrings] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [stringsMessage, setStringsMessage] = useState<{ type: "success" | "warning"; text: string } | null>(null);
 
   // Accepted (Active) Keywords
   const acceptedKeywords = useMemo(() => keywords.filter((k) => k.selected), [keywords]);
@@ -293,6 +386,7 @@ No preamble or extra commentary.`;
     }
 
     setLoadingStrings(true);
+    setStringsMessage(null);
     try {
       const selectedTerms = acceptedKeywords.map((k) => `"${k.term}" (${k.category})`).join("; ");
       
@@ -358,24 +452,63 @@ Return ONLY a JSON array of objects with the exact schema:
 ]`;
 
       const text = await callAI(prompt, "You are a professional research librarian and Boolean search string engineer.", aiConfig);
-      const parsed = parseJSONLoose(text);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const validatedStrategies = parsed.map((strategy) =>
-          strategy?.database?.toLowerCase().includes("web of science")
-            ? {
-                ...strategy,
-                database: "Web of Science",
-                query: buildWebOfScienceQuery(keywords, yearFrom, yearTo, docType, language),
-              }
-            : strategy
-        );
-        onUpdateProtocol({
-          ...protocol,
-          searchStrategies: validatedStrategies,
+      const parsedStrategies = extractSearchStrategies(parseJSONLoose(text));
+      const fallbackStrategies = buildFallbackSearchStrategies(
+        keywords,
+        selectedSubjectAreas,
+        publicationStage,
+        yearFrom,
+        yearTo,
+        docType,
+        language,
+      );
+      const normalizedStrategies = fallbackStrategies.map((fallback) => {
+        const match = parsedStrategies.find((strategy) => {
+          const database = typeof strategy?.database === "string" ? strategy.database.toLowerCase() : "";
+          return database.includes(fallback.database.toLowerCase()) ||
+            (fallback.database === "Web of Science" && database.includes("wos")) ||
+            (fallback.database === "PubMed" && database.includes("medline")) ||
+            (fallback.database === "Google Scholar" && database.includes("acm"));
         });
-      }
+        if (!match) return fallback;
+        return {
+          database: fallback.database,
+          query: typeof match.query === "string" && match.query.trim()
+            ? match.query.trim()
+            : fallback.query,
+          filters: typeof match.filters === "string" && match.filters.trim()
+            ? match.filters.trim()
+            : fallback.filters,
+        };
+      });
+      onUpdateProtocol({
+        ...protocol,
+        searchStrategies: normalizedStrategies,
+      });
+      setStringsMessage(
+        parsedStrategies.length > 0
+          ? { type: "success", text: "Database search strings generated and saved. Review or edit each query below." }
+          : { type: "warning", text: "The AI response was not valid JSON, so reproducible fallback queries were generated from your accepted keywords." }
+      );
     } catch (e) {
       console.error("Error generating search strings:", e);
+      const fallbackStrategies = buildFallbackSearchStrategies(
+        keywords,
+        selectedSubjectAreas,
+        publicationStage,
+        yearFrom,
+        yearTo,
+        docType,
+        language,
+      );
+      onUpdateProtocol({
+        ...protocol,
+        searchStrategies: fallbackStrategies,
+      });
+      setStringsMessage({
+        type: "warning",
+        text: `AI search-string generation failed, so reproducible fallback queries were generated. ${e instanceof Error ? e.message : "Try again or review the generated queries below."}`,
+      });
     }
     setLoadingStrings(false);
   };
@@ -464,6 +597,16 @@ Return ONLY a JSON array of objects with the exact schema:
               {loadingKw ? "Suggesting Academic Keywords..." : "AI Suggest Keywords & Synonyms"}
             </button>
           </div>
+           {stringsMessage && (
+             <div className={`flex items-start gap-2 rounded-lg border p-3 text-xs ${
+               stringsMessage.type === "success"
+                 ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                 : "border-amber-200 bg-amber-50 text-amber-900"
+             }`}>
+               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+               <span>{stringsMessage.text}</span>
+             </div>
+           )}
         </div>
 
         {/* Section 1: Keywords Management with Category Clusters, Deletion & Addition */}

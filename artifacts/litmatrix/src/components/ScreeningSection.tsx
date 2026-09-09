@@ -294,7 +294,7 @@ Return ONLY a JSON array:
               Study Selection & Screening Review
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Screen every imported record using a strict record-evidence gate. Records without a completed decision remain unresolved and outside the synthesis set.
+              Screen every imported record using a strict record-evidence gate. New imports and interrupted batches remain pending until screening completes; existing decisions are preserved.
             </p>
           </div>
 
@@ -309,7 +309,7 @@ Return ONLY a JSON array:
                 ? `Screening (${progress}%)...`
                 : unresolvedCount === 0
                   ? "Screening complete"
-                  : "AI Screen Unresolved Records"}
+                  : "Continue AI Screening"}
             </button>
           </div>
         </div>

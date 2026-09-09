@@ -684,12 +684,13 @@ export default function FullReviewReport({
 
         <div className="flex items-center gap-2 flex-wrap">
           <label className="flex items-center gap-2 text-xs font-mono text-slate-600">
-            <span className="whitespace-nowrap">Citation style</span>
+             <span className="whitespace-nowrap font-semibold">Choose citation style</span>
             <select
               value={citationStyle}
               onChange={(event) => onCitationStyleChange(event.target.value as CitationStyle)}
               className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               aria-label="Manuscript citation style"
+               title="Choose the citation and reference format used in the manuscript and exports"
             >
               {CITATION_STYLE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>

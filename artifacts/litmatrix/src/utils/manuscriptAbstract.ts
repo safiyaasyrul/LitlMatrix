@@ -274,8 +274,13 @@ export const buildManuscriptAbstract = ({
     : possibleProtocolContext;
   const background = protocolContext ||
     `The literature represented in this review addresses ${topic}.`;
+  const knowledgeGap = firstCompleteSentence(protocol.knowledgeGap, 28);
+  const researchQuestion = cleanText(protocol.primaryResearchQuestions?.[0])
+    .replace(/^RQ\d+:\s*/i, "");
   const objective =
-    `This review synthesises the available evidence on ${topic} to clarify the principal patterns and gaps documented in the literature.`;
+    researchQuestion
+      ? `This review synthesises the available evidence on ${topic} to clarify the principal patterns and gaps documented in the literature, with particular attention to ${limitWords(researchQuestion, 28)}.`
+      : `This review synthesises the available evidence on ${topic} to clarify the principal patterns and gaps documented in the literature.`;
   const informationSourceNames = protocol.informationSources
     .map((item) => cleanText(item.name))
     .filter(Boolean);
@@ -310,22 +315,50 @@ export const buildManuscriptAbstract = ({
   const characteristicValues = uniqueReportedValues(characteristics, includedIds)
     .filter((value) => value.split(/\s+/).length <= 8)
     .slice(0, 4);
+  const reportedDesigns = Array.from(new Set(
+    characteristics
+      .filter((item) => includedIds.has(item.recordId))
+      .map((item) => cleanText(item.studyDesign))
+      .filter((value) => value && !/^not (reported|available|specified|established|applicable)/i.test(value))
+  )).slice(0, 3);
+  const reportedOutcomes = Array.from(new Set(
+    characteristics
+      .filter((item) => includedIds.has(item.recordId))
+      .map((item) => cleanText(item.primaryOutcome))
+      .filter((value) => value && !/^not (reported|available|specified|established|applicable)/i.test(value))
+  )).slice(0, 3);
   const resultsParts = [
     supportedThemes.length > 0
       ? `The included evidence was organised around ${supportedThemes.join(", ")}`
       : "",
     characteristicValues.length > 0
-      ? `extracted characteristics represented ${characteristicValues.join(", ")}`
+      ? `reported populations, interventions, or contexts included ${characteristicValues.join(", ")}`
+      : "",
+    reportedDesigns.length > 0
+      ? `reported study designs included ${reportedDesigns.join(", ")}`
+      : "",
+    reportedOutcomes.length > 0
+      ? `reported outcomes included ${reportedOutcomes.join(", ")}`
       : "",
   ].filter(Boolean);
   const results = resultsParts.length > 0
     ? endSentence(resultsParts.join("; ").replace(/^./, (letter) => letter.toUpperCase()))
     : "The final evidence set supports a descriptive account of the approaches, contexts, and outcomes reported in the included records.";
-  const conclusion =
-    `Collectively, the included evidence defines the current scope of work on ${topic}, while the available record-level information supports cautious narrative interpretation rather than claims beyond the supplied evidence.`;
+  const conclusion = [
+    `Collectively, the included evidence defines the current scope of work on ${topic}`,
+    knowledgeGap ? `the review addresses the documented gap that ${limitWords(knowledgeGap, 28).replace(/[.!?]$/, "")}` : "",
+    "and the available record-level information supports cautious narrative interpretation rather than claims beyond the supplied evidence",
+    "because full-text retrieval and eligibility assessment were not performed",
+  ].filter(Boolean).join("; ") + ".";
 
   const abstract: ManuscriptAbstract = {
-    text: [background, objective, methods, results, conclusion]
+    text: [
+      `Background: ${background}`,
+      `Objective: ${objective}`,
+      `Methods: ${methods}`,
+      `Results: ${results}`,
+      `Conclusion: ${conclusion}`,
+    ]
       .map(endSentence)
       .join(" "),
     keywords: buildKeywords(topic, includedRecords, characteristics, synthesis),

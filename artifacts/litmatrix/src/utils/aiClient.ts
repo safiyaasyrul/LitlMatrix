@@ -100,7 +100,7 @@ export function isOpenRouterApiKey(value?: string): boolean {
 }
 
 export function isGoogleGeminiApiKey(value?: string): boolean {
-  return value?.trim().startsWith("AIza") ?? false;
+  return /^(AIza|AQ\.)/.test(value?.trim() || "");
 }
 
 function getConfiguredDirectProvider(keys: Partial<UserAIKeysConfig>): (typeof DIRECT_AI_PROVIDERS)[number] | undefined {

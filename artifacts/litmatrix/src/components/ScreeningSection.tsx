@@ -107,7 +107,12 @@ export default function ScreeningSection({
     const unresolvedRecords = screeningPool.filter(
       (record) => screening[record.id]?.agreed === undefined
     );
-    const recordsToScreen = unresolvedRecords.length > 0 ? unresolvedRecords : screeningPool;
+    if (unresolvedRecords.length === 0) {
+      setErrorMessage("All imported records already have screening decisions. No new AI calls were made.");
+      screeningRunRef.current = false;
+      return;
+    }
+    const recordsToScreen = unresolvedRecords;
     const batchSize = 4;
     const totalBatches = Math.ceil(recordsToScreen.length / batchSize);
     const nextScreening = { ...screening };
@@ -184,9 +189,11 @@ Return ONLY a JSON array:
               err?.message || ""
             );
           setErrorMessage(
-            isManagedLimit
-              ? `Daily managed-AI limit reached. Completed decisions were kept; ${remainingUnresolved} record${remainingUnresolved === 1 ? "" : "s"} remain unresolved. Resume later or select a configured direct provider in AI Configuration.`
-              : `AI screening could not complete batch ${b + 1}. Completed decisions were kept; affected records remain unresolved. ${err?.message || "Request failed."}`
+            isManagedLimit && remainingUnresolved === 0
+              ? "All imported records already have screening decisions. No unresolved records remain, so no retry is needed."
+              : isManagedLimit
+                ? `Daily managed-AI limit reached. Completed decisions were kept; ${remainingUnresolved} record${remainingUnresolved === 1 ? "" : "s"} remain unresolved. Resume later or select a configured direct provider in AI Configuration.`
+                : `AI screening could not complete batch ${b + 1}. Completed decisions were kept; affected records remain unresolved. ${err?.message || "Request failed."}`
           );
           onUpdateScreening({ ...nextScreening });
           if (isManagedLimit || isProviderQuotaError) {
@@ -291,11 +298,15 @@ Return ONLY a JSON array:
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => void runAIScreening()}
-              disabled={runningScreening || screeningPool.length === 0}
+              disabled={runningScreening || screeningPool.length === 0 || unresolvedCount === 0}
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-mono font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 rounded-lg shadow-xs transition-colors cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
-              {runningScreening ? `Screening (${progress}%)...` : "AI Screen Records"}
+              {runningScreening
+                ? `Screening (${progress}%)...`
+                : unresolvedCount === 0
+                  ? "Screening complete"
+                  : "AI Screen Unresolved Records"}
             </button>
           </div>
         </div>

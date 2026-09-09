@@ -1,0 +1,561 @@
+============================================================
+MANUSCRIPT CITATION STYLE + STANDARD PRISMA 2020 FLOW DIAGRAM
+============================================================
+
+Implement BOTH of the following changes:
+
+1. Add a user-selectable citation style that controls the ENTIRE
+   manuscript.
+2. Replace the current custom PRISMA flow diagram with a standard
+   PRISMA 2020 flow diagram.
+
+These changes must use the existing project state and MUST NOT alter
+the actual evidence, screening decisions, or included records.
+
+============================================================
+PART A — USER-SELECTABLE CITATION STYLE
+============================================================
+
+The application currently does not allow the user to choose a citation
+style.
+
+Add a global "Citation Style" setting in the manuscript/project settings.
+
+The user should be able to choose at least:
+
+- APA 7th
+- IEEE
+- Vancouver
+- Harvard
+
+If the current architecture already supports additional styles, include
+them as well.
+
+Use a dropdown/select control:
+
+Citation Style
+[ APA 7th ▼ ]
+
+The selected style must be stored as part of the project state.
+
+============================================================
+1. CITATION STYLE MUST CONTROL THE WHOLE MANUSCRIPT
+============================================================
+
+The selected citation style must consistently control ALL in-text
+citations and reference-list formatting throughout the manuscript.
+
+This includes:
+
+- Abstract, if citations are present
+- Introduction
+- Methods, if citations are present
+- Results
+- Section 3.4 Evidence Synthesis
+- Discussion
+- Conclusion, if citations are present
+- Tables, where citations are used
+- Figures/captions, where citations are used
+- References / bibliography
+- Appendices, where citations are used
+
+Do NOT hard-code:
+
+"Author et al. (Year)"
+
+or:
+
+"(Author, Year)"
+
+or:
+
+"[1]"
+
+inside individual AI prompts.
+
+The AI should NOT decide the citation format.
+
+============================================================
+2. SEPARATE EVIDENCE IDENTIFICATION FROM CITATION FORMATTING
+============================================================
+
+AI-generated synthesis should identify supporting studies using their
+record IDs rather than formatting citations itself.
+
+For example:
+
+{
+  "prose": "The included evidence indicates...",
+  "supportingRecordIds": [
+    "record-001",
+    "record-004",
+    "record-007"
+  ]
+}
+
+The application must then convert those record IDs into citations
+according to the USER'S SELECTED CITATION STYLE.
+
+This is critical.
+
+AI determines:
+
+"Which included studies support this statement?"
+
+The application determines:
+
+"How should those studies be cited?"
+
+============================================================
+3. CITATION FORMATTER
+============================================================
+
+Create one central citation-formatting utility, for example:
+
+formatCitation(recordIds, citationStyle, records)
+
+and use it throughout the manuscript.
+
+Do NOT create separate hard-coded citation rules inside:
+
+- SynthesisSection
+- FullReviewReport
+- Discussion generation
+- Results generation
+- individual manuscript sections
+
+There should be ONE authoritative citation formatter.
+
+============================================================
+4. EXAMPLES
+============================================================
+
+For the same two supporting studies, the output should change according
+to the selected style.
+
+APA 7th:
+
+(Author A, 2022; Author B, 2024)
+
+IEEE:
+
+[12], [18]
+
+Vancouver:
+
+(12,18)
+
+or the appropriate Vancouver format implemented by the citation engine.
+
+Harvard:
+
+(Author A 2022; Author B 2024)
+
+These are examples only. Follow the correct conventions for the
+selected style.
+
+Do not hard-code these examples into the manuscript.
+
+============================================================
+5. REFERENCE LIST
+============================================================
+
+The References section MUST also change according to the selected
+citation style.
+
+The reference list must be generated from the FINAL INCLUDED RECORDS
+used by the manuscript.
+
+Do not include excluded studies in the manuscript reference list unless
+they are genuinely cited for a methodological reason and are actually
+part of the manuscript's permitted references.
+
+For evidence citations, the default Evidence Lock remains:
+
+FINAL INCLUDED RECORDS ONLY.
+
+============================================================
+6. APA 7th REQUIREMENTS
+============================================================
+
+For APA 7th, implement appropriate:
+
+- author formatting;
+- year formatting;
+- "et al." rules;
+- multiple citations;
+- alphabetical ordering where appropriate;
+- reference-list formatting;
+- DOI/URL handling where metadata is available.
+
+Do not fabricate missing bibliographic information.
+
+============================================================
+7. IEEE REQUIREMENTS
+============================================================
+
+For IEEE:
+
+- assign citation numbers consistently;
+- reuse the same number when the same reference is cited again;
+- maintain one authoritative reference numbering order;
+- use numbered in-text citations;
+- format the reference list accordingly.
+
+Do not allow different manuscript sections to independently renumber
+the same references.
+
+============================================================
+8. VANCOUVER / HARVARD
+============================================================
+
+Implement the selected style consistently throughout.
+
+If a bibliographic field required by a style is unavailable, do not
+invent it.
+
+Use only available RIS metadata.
+
+============================================================
+9. LIVE STYLE SWITCHING
+============================================================
+
+The user should be able to change:
+
+APA 7th → IEEE → Vancouver → Harvard
+
+without regenerating the entire manuscript with AI.
+
+Changing citation style should re-render citations and references from
+the stored evidence/metadata.
+
+Do NOT spend an additional AI API call merely because the user changed
+citation style.
+
+The underlying manuscript content should remain the same.
+
+Only citation formatting should change.
+
+============================================================
+10. EXPORT CONSISTENCY
+============================================================
+
+The selected citation style must be respected in:
+
+- manuscript preview;
+- Markdown export;
+- DOCX export;
+- any downloadable manuscript;
+- reference list;
+- tables;
+- figures/captions containing citations.
+
+The screen and exported manuscript must use the SAME selected style.
+
+============================================================
+11. PERSISTENCE
+============================================================
+
+Save the selected citation style with the project.
+
+If the user closes and reopens the application, the selected citation
+style must be restored.
+
+Default:
+
+APA 7th
+
+unless another default already exists.
+
+============================================================
+PART B — REPLACE CURRENT PRISMA DIAGRAM
+============================================================
+
+The current PRISMA visualization is a custom application-style diagram.
+
+Replace it with a standard PRISMA 2020 flow diagram structure.
+
+Do NOT merely change the colours or styling of the existing diagram.
+
+The structure itself should follow the PRISMA 2020 flow diagram
+convention.
+
+============================================================
+12. PRISMA 2020 STRUCTURE
+============================================================
+
+Because this application does NOT perform full-text retrieval or
+full-text assessment, DO NOT create a false full-text stage.
+
+Use an adapted PRISMA 2020 flow appropriate to the actual workflow.
+
+The flow should represent:
+
+IDENTIFICATION
+
+Records identified from databases/registers
+
+↓
+
+Records removed before screening
+- Duplicate records removed
+- Other records removed, if actually recorded
+
+↓
+
+SCREENING
+
+Records screened
+
+↓
+
+Records excluded
+
+↓
+
+INCLUDED
+
+Records included in review
+and/or
+Records included in synthesis
+
+Use terminology appropriate to what the application actually performed.
+
+DO NOT show:
+
+"Reports sought for retrieval"
+
+"Reports not retrieved"
+
+"Reports assessed for eligibility"
+
+"Reports excluded with reasons"
+
+unless the application actually performs those stages.
+
+============================================================
+13. ACTUAL PRISMA COUNTS
+============================================================
+
+Every number in the diagram MUST be calculated from the actual
+application state.
+
+Never hard-code numbers.
+
+At minimum calculate:
+
+- records identified;
+- duplicates removed;
+- records available for screening;
+- records screened;
+- records excluded;
+- records included.
+
+The counts must reconcile mathematically.
+
+For example:
+
+records available for screening
+=
+records identified - duplicates removed
+
+records screened
+=
+records available for screening
+
+records included
+=
+records with final agreed INCLUDE decision
+
+records excluded
+=
+records screened - records included
+
+If UNCERTAIN records remain unresolved, do not silently classify them as
+included.
+
+Represent unresolved records separately if necessary, or clearly prevent
+the review from being marked final until decisions are resolved.
+
+============================================================
+14. SCREENING LEDGER IS THE SOURCE OF TRUTH
+============================================================
+
+PRISMA numbers MUST be derived from the actual screening ledger.
+
+Do not derive PRISMA numbers from:
+
+- AI scores;
+- theme counts;
+- synthesis records;
+- manuscript text;
+- characteristics count;
+- hard-coded constants;
+- MAX_INCLUDED_RECORDS;
+- API processing limits.
+
+The number of included studies is NOT an AI-processing limit.
+
+There must be NO artificial maximum number of included studies.
+
+============================================================
+15. IMPORTANT — REMOVE LEGACY 99/90 LIMITS
+============================================================
+
+Audit the codebase for:
+
+MAX_INCLUDED_RECORDS
+MAX_AI_PROCESSING_RECORDS
+.slice(0, MAX_INCLUDED_RECORDS)
+slice(0, 90)
+slice(0, 99)
+
+and similar artificial study limits.
+
+Do NOT use these limits to determine:
+
+- inclusion;
+- exclusion;
+- PRISMA counts;
+- final evidence;
+- manuscript references.
+
+If an AI-processing budget is required for expensive analysis, keep it
+strictly separate from the evidence set.
+
+Example:
+
+All final included records = 147
+
+AI synthesis processing subset = 90
+
+The PRISMA diagram must still report:
+
+147 included records
+
+NOT:
+
+90 included records.
+
+============================================================
+16. STANDARD PRISMA VISUAL DESIGN
+============================================================
+
+Create a clean publication-style PRISMA 2020 flow diagram.
+
+Use:
+
+- rectangular boxes;
+- clear arrows;
+- standard identification/screening/included grouping;
+- readable typography;
+- consistent spacing;
+- publication-friendly layout.
+
+Do not create a dashboard/card-style visualization.
+
+Do not add decorative elements that make it look like an application
+analytics chart.
+
+The diagram should be suitable for inclusion in a journal manuscript.
+
+============================================================
+17. PRISMA EXPORT
+============================================================
+
+The PRISMA diagram must appear correctly in:
+
+- application preview;
+- manuscript;
+- Markdown export where possible;
+- DOCX export.
+
+For DOCX, ensure the diagram is inserted as an actual figure/image
+rather than being replaced by a text description.
+
+Include an appropriate caption such as:
+
+"Figure X. PRISMA 2020 flow diagram of the study selection process."
+
+Do not invent a figure number if the manuscript already has a figure
+numbering system. Integrate with the existing numbering.
+
+============================================================
+18. PRISMA METHOD TRANSPARENCY
+============================================================
+
+The manuscript Methods section should describe only the screening stages
+that actually occurred.
+
+Do NOT claim:
+
+"full-text articles were assessed"
+
+if full-text assessment was not performed.
+
+Do NOT claim:
+
+"reports were sought for retrieval"
+
+if the application did not perform retrieval.
+
+The PRISMA diagram and Methods section must agree exactly.
+
+============================================================
+19. FINAL VALIDATION
+============================================================
+
+Before final manuscript generation, run validation checks:
+
+A. Citation validation
+- Every citation record exists.
+- Every evidence citation refers to an allowed included record.
+- Citation numbering is consistent for numbered styles.
+- Reference list matches cited records.
+
+B. PRISMA validation
+- All counts come from current project state.
+- Included count equals final INCLUDE decisions.
+- No artificial inclusion limit is applied.
+- Counts reconcile.
+- No unsupported full-text stage appears.
+
+C. Export validation
+- Selected citation style is identical in preview and exports.
+- PRISMA diagram appears in preview and DOCX.
+- References match the selected style.
+
+============================================================
+FINAL PRINCIPLE
+============================================================
+
+The workflow should operate as:
+
+USER SELECTS CITATION STYLE
+        ↓
+Stored project setting
+        ↓
+Manuscript content remains evidence-grounded
+        ↓
+Central citation formatter applies selected style
+        ↓
+Same style appears throughout manuscript + references + exports
+
+And:
+
+ACTUAL SEARCH RECORDS
+        ↓
+DEDUPLICATION
+        ↓
+ACTUAL SCREENING LEDGER
+        ↓
+FINAL INCLUDE DECISIONS
+        ↓
+STANDARD PRISMA 2020 FLOW DIAGRAM
+        ↓
+EVIDENCE LOCK
+        ↓
+RESULTS / SYNTHESIS / DISCUSSION / MANUSCRIPT
+
+Do not let AI-generated prose, API limits, or citation formatting alter
+the underlying evidence set.

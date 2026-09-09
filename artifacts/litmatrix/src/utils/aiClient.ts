@@ -15,6 +15,16 @@ export interface AIProviderConfig {
   model?: string;
 }
 
+export class AIRequestError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = "AIRequestError";
+    this.status = status;
+  }
+}
+
 export interface UserAIKeysConfig {
   activeProvider: SupportedAIProvider;
   openai: {
@@ -262,7 +272,9 @@ export async function callAI(
       }),
     });
     const data = await readAIResponseJson(res, "Replit-managed AI");
-    if (!res.ok || data.error) throw new Error(data.error || `Server error (${res.status})`);
+    if (!res.ok || data.error) {
+      throw new AIRequestError(data.error || `Server error (${res.status})`, res.status);
+    }
     return data.text || "";
   }
 

@@ -6,7 +6,7 @@ import {
   Download,
   FileText,
 } from "lucide-react";
-import { callAI, parseJSONLoose } from "../utils/aiClient";
+import { AIRequestError, callAI, parseJSONLoose } from "../utils/aiClient";
 import StudyCharacteristicsTable from "./StudyCharacteristicsTable";
 
 const STRICT_SCREENING_THRESHOLD = 85;
@@ -37,16 +37,14 @@ export default function ScreeningSection({
   const includedRecords = screeningPool
     .filter((record) => screening[record.id]?.agreed === true)
     .sort((a, b) => (screening[b.id]?.score || 0) - (screening[a.id]?.score || 0));
-  const includedIds = new Set(includedRecords.map((record) => record.id));
   const includedCount = includedRecords.length;
   const afterDedupCount = screeningPool.length;
-  const excludedCount = Math.max(0, afterDedupCount - includedCount);
+  const excludedCount = screeningPool.filter((record) => screening[record.id]?.agreed === false).length;
+  const unresolvedCount = Math.max(0, afterDedupCount - includedCount - excludedCount);
   const exclusionBreakdown = screeningPool.reduce<Record<string, number>>((acc, record) => {
     const decision = screening[record.id];
-    if (!includedIds.has(record.id)) {
-      const reason = decision?.agreed === false
-        ? decision.exclusionReason || "Other"
-        : "Other";
+    if (decision?.agreed === false) {
+      const reason = decision.exclusionReason || "Other";
       acc[reason] = (acc[reason] || 0) + 1;
     }
     return acc;
@@ -63,6 +61,11 @@ export default function ScreeningSection({
       ...(Object.entries(exclusionBreakdown).length > 0
         ? Object.entries(exclusionBreakdown).map(([reason, count]) => `- ${reason}: ${count}`)
         : ["- No exclusions recorded."]),
+      ``,
+      `## Screening status`,
+      `- Included: ${includedCount}`,
+      `- Excluded: ${excludedCount}`,
+      `- Unresolved: ${unresolvedCount}`,
       ``,
       `## Included records and screening justifications`,
       ...(includedRecords.length > 0
@@ -90,20 +93,25 @@ export default function ScreeningSection({
   // AI-assisted screening
   const runAIScreening = async () => {
     // State updates are asynchronous; the ref prevents two rapid clicks from
-    // creating overlapping OpenRouter batches before the button disables.
+    // creating overlapping AI batches before the button disables.
     if (screeningPool.length === 0 || screeningRunRef.current) return;
     screeningRunRef.current = true;
     setRunningScreening(true);
     setProgress(0);
     setErrorMessage(null);
 
+    const unresolvedRecords = screeningPool.filter(
+      (record) => screening[record.id]?.agreed === undefined
+    );
+    const recordsToScreen = unresolvedRecords.length > 0 ? unresolvedRecords : screeningPool;
     const batchSize = 4;
-    const totalBatches = Math.ceil(screeningPool.length / batchSize);
+    const totalBatches = Math.ceil(recordsToScreen.length / batchSize);
     const nextScreening = { ...screening };
 
     try {
       for (let b = 0; b < totalBatches; b++) {
-        const batch = screeningPool.slice(b * batchSize, (b + 1) * batchSize);
+        const batch = recordsToScreen.slice(b * batchSize, (b + 1) * batchSize);
+        const batchIds = new Set(batch.map((record) => record.id));
         const payload = batch.map((r) => ({
           id: r.id,
           title: r.title,
@@ -143,8 +151,11 @@ Return ONLY a JSON array:
             1200
           );
           const parsed = parseJSONLoose(text);
-          if (Array.isArray(parsed)) {
-            parsed.forEach((p: any) => {
+          if (!Array.isArray(parsed)) {
+            throw new Error("AI returned an invalid screening response.");
+          }
+          parsed.forEach((p: any) => {
+              if (!batchIds.has(p.id)) return;
               const finalScore = p.score ?? null;
               const isInclude = finalScore !== null && finalScore >= effectiveThreshold;
 
@@ -156,26 +167,25 @@ Return ONLY a JSON array:
                 exclusionReason: !isInclude ? p.exclusionReason || "Wrong study design" : undefined,
               };
             });
-          }
         } catch (err: any) {
           console.warn("AI screening batch error:", err);
-          if (!errorMessage) {
-            setErrorMessage(`AI screening could not complete this batch: ${err.message || "Request failed"}. Unresolved records were conservatively excluded.`);
+          const remainingUnresolved = screeningPool.filter(
+            (record) => nextScreening[record.id]?.agreed === undefined
+          ).length;
+          const isManagedLimit =
+            (err instanceof AIRequestError && err.status === 429) ||
+            /daily managed-ai limit reached/i.test(err?.message || "");
+          setErrorMessage(
+            isManagedLimit
+              ? `Daily managed-AI limit reached. Completed decisions were kept; ${remainingUnresolved} record${remainingUnresolved === 1 ? "" : "s"} remain unresolved. Resume later or select a configured direct provider in AI Configuration.`
+              : `AI screening could not complete batch ${b + 1}. Completed decisions were kept; affected records remain unresolved. ${err?.message || "Request failed."}`
+          );
+          onUpdateScreening({ ...nextScreening });
+          if (isManagedLimit) {
+            setProgress(Math.round((b / totalBatches) * 100));
+            break;
           }
         }
-
-        batch.forEach((record) => {
-          const decision = nextScreening[record.id];
-          if (!decision || decision.agreed === undefined) {
-            nextScreening[record.id] = {
-              score: decision?.score ?? null,
-              reason: "No explicit protocol match was confirmed during the brief record scan; excluded conservatively from the synthesis set.",
-              decision: "exclude",
-              agreed: false,
-              exclusionReason: "Other",
-            };
-          }
-        });
 
         setProgress(Math.round(((b + 1) / totalBatches) * 100));
         onUpdateScreening({ ...nextScreening });
@@ -212,7 +222,7 @@ Return ONLY a JSON array:
               Study Selection & Screening Review
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Screen every imported record using a strict record-evidence gate. The bounded synthesis set retains no more than 99 of the strongest protocol matches.
+              Screen every imported record using a strict record-evidence gate. Records without a completed decision remain unresolved and outside the synthesis set.
             </p>
           </div>
 
@@ -240,6 +250,7 @@ Return ONLY a JSON array:
             <div className="font-mono text-xs text-slate-800 flex items-center gap-3">
               <span className="text-emerald-700 font-semibold">{includedCount} Included</span>
               <span className="text-rose-700 font-semibold">{excludedCount} Excluded</span>
+              <span className="text-amber-700 font-semibold">{unresolvedCount} Unresolved</span>
             </div>
           </div>
         )}
@@ -280,6 +291,7 @@ Return ONLY a JSON array:
             ["After deduplication", afterDedupCount],
             ["Included", includedCount],
             ["Excluded", excludedCount],
+             ["Unresolved", unresolvedCount],
           ].map(([label, value]) => (
             <div key={label} className="bg-slate-900 border border-slate-800 rounded-lg p-3">
               <div className="text-[10px] font-mono uppercase text-slate-500">{label}</div>

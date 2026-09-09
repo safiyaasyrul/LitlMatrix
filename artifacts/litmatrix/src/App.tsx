@@ -90,10 +90,17 @@ import {
   FilePlus,
 } from "lucide-react";
 
+const LEGACY_FAILED_BATCH_EXCLUSION_REASON =
+  "No explicit protocol match was confirmed during the brief record scan; excluded conservatively from the synthesis set.";
+
 const boundPersistedScreening = (
   decisions: Record<string, ScreeningDecision>,
   _sourceRecords: SLRRecord[]
-) => ({ ...decisions });
+) => Object.fromEntries(
+  Object.entries(decisions).filter(
+    ([, decision]) => decision?.reason !== LEGACY_FAILED_BATCH_EXCLUSION_REASON
+  )
+);
 
 export default function App() {
   const hydrationReady = useRef(false);
@@ -312,7 +319,7 @@ export default function App() {
           );
           setRecords(saved.records ?? []);
           setDupesRemoved(typeof saved.dupesRemoved === "number" ? saved.dupesRemoved : 0);
-          setScreening(saved.screening ?? {});
+          setScreening(boundPersistedScreening(saved.screening ?? {}, saved.records ?? []));
           setCharacteristics(saved.characteristics ?? []);
           setSynthesis(saved.synthesis ?? {
             characteristicsTable: [],
@@ -368,16 +375,13 @@ export default function App() {
   // Exclusion reasons breakdown for PRISMA Item 16b
   const exclusionReasonsBreakdown = useMemo(() => {
     const acc: Record<string, number> = {};
-    const includedIds = new Set(includedRecords.map((record) => record.id));
     records.forEach((r) => {
-      if (includedIds.has(r.id)) return;
-      const reason = screening[r.id]?.agreed === false
-        ? screening[r.id]?.exclusionReason || "Other"
-        : "Other";
+      if (screening[r.id]?.agreed !== false) return;
+      const reason = screening[r.id]?.exclusionReason || "Other";
       acc[reason] = (acc[reason] || 0) + 1;
     });
     return acc;
-  }, [records, includedRecords, screening]);
+  }, [records, screening]);
 
   // PRISMA flow counts are derived only from records and recorded screening decisions.
   // Full-text retrieval/assessment is not tracked by this application.

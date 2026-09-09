@@ -180,7 +180,7 @@ Return ONLY a JSON array:
             (err instanceof AIRequestError && err.status === 429) ||
             /daily managed-ai limit reached/i.test(err?.message || "");
           const isProviderQuotaError =
-            /quota|rate limit|resource[_\s-]?exhausted|exceeded your current quota/i.test(
+            /quota|rate limit|resource[_\s-]?exhausted|exceeded your current quota|insufficient credits|credits/i.test(
               err?.message || ""
             );
           setErrorMessage(
@@ -218,7 +218,10 @@ Return ONLY a JSON array:
               ✕
             </button>
           </div>
-          {aiConfig.provider === "gemini" && unresolvedCount > 0 && onReplaceGeminiApiKey && (
+          {unresolvedCount > 0 &&
+            onReplaceGeminiApiKey &&
+            (aiConfig.provider === "gemini" ||
+              /openrouter|insufficient credits|quota|credits/i.test(errorMessage)) && (
             <form
               className="rounded-lg border border-amber-200 bg-white p-3"
               onSubmit={(event) => {
@@ -234,10 +237,12 @@ Return ONLY a JSON array:
                 <KeyRound className="h-4 w-4 text-indigo-600" />
                 <div>
                   <h3 className="text-sm font-semibold text-slate-900">
-                    Continue with another Gemini API key
+                    {aiConfig.provider === "gemini"
+                      ? "Continue with another Gemini API key"
+                      : "Switch from OpenRouter to Gemini"}
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    The new key replaces the current Gemini key in this browser, then resumes the {unresolvedCount} unresolved record{unresolvedCount === 1 ? "" : "s"}.
+                    Enter a Google AI Studio key. It will be saved as the active Gemini provider in this browser, then resume the {unresolvedCount} unresolved record{unresolvedCount === 1 ? "" : "s"}.
                   </p>
                 </div>
               </div>

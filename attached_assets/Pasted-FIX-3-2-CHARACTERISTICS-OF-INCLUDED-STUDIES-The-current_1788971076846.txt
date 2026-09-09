@@ -1,0 +1,133 @@
+FIX 3.2 CHARACTERISTICS OF INCLUDED STUDIES
+
+The current output is incorrect:
+
+“Energy, emissions and environmental performance 161”
+“Not reported 161”
+“Not established from citation metadata 161”
+
+There are only 11 included studies, so these counts are impossible.
+
+This indicates that the aggregation/rendering logic is counting characters, object properties, array elements, or serialized values rather than counting STUDY RECORDS.
+
+IMPORTANT:
+The unit of analysis is always ONE INCLUDED STUDY / ONE RECORD.
+
+For every characteristic:
+- one record contributes a maximum of one value;
+- count each record once;
+- never count characters;
+- never count object properties;
+- never count array length as the study count;
+- never concatenate values and count the resulting string.
+
+Use the actual final includedRecords evidence set.
+
+DO NOT use publication year in this section.
+
+3.2 SHOULD CONTAIN:
+
+Characteristics:
+1. Study/intervention category
+2. Context
+3. Methodological approach
+4. Reported outcome type
+5. Geographical context
+
+Do not include publication year distribution.
+
+COUNTING
+
+For each included record:
+
+const value = characteristic?.field?.trim() || "Not reported";
+
+Then aggregate by VALUE.
+
+Conceptually:
+
+Map<string, number>
+
+for each included record:
+    category = characteristic value OR "Not reported"
+    counts[category] += 1
+
+The sum of counts for a characteristic should equal:
+
+includedRecords.length
+
+unless the field genuinely supports multiple categories per study. If multiple values are explicitly supported, count studies rather than tokens and clearly handle that case.
+
+CRITICAL:
+
+Do NOT use the old hard-coded keyword classifier.
+
+Do NOT classify records using:
+- keyword matching
+- title substring matching
+- hard-coded maritime categories
+- outcomeTerms
+- technologyTerms
+- methodsTerms
+- classifyRecordTheme
+- buildClusters
+- themeDefinitions
+
+The characteristics must come from the existing StudyCharacteristic data when available.
+
+If a characteristic was not actually extracted/reported, display:
+
+“Not reported”
+
+Do not replace missing data with inferred classifications.
+
+DO NOT DISPLAY:
+
+“Not established from citation metadata”
+
+Use:
+
+“Not reported”
+
+unless the application has a specific, explicitly stored value supporting a more precise label.
+
+MANUSCRIPT PRESENTATION
+
+Use a compact table:
+
+| Characteristic | Category | n |
+|---|---|---:|
+
+Example:
+
+Study/intervention category | Energy, emissions and environmental performance | 11
+Context | Not reported | 11
+Methodological approach | Not reported | 11
+Reported outcome type | Not reported | 11
+Geographical context | Not reported | 11
+
+The actual categories and counts must come from the included records, not from this example.
+
+NARRATIVE
+
+Generate a short descriptive paragraph from the resulting table.
+
+Do not produce a long explanation.
+
+Do not mention AI.
+
+Do not mention metadata limitations repeatedly.
+
+Do not turn each study into a separate sentence.
+
+VALIDATION
+
+For 11 included records:
+
+- Every displayed count must be <= 11.
+- For single-valued characteristics, category counts must sum to 11.
+- No count such as 161 is possible.
+- “Publication year distribution” must not appear.
+- “Not established from citation metadata” must not appear.
+- No keyword classifier may be used.
+- Changing includedRecords must change the characteristics table accordingly.

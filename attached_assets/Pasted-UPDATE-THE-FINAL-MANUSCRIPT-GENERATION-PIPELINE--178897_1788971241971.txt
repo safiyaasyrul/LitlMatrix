@@ -1,0 +1,724 @@
+UPDATE THE FINAL MANUSCRIPT GENERATION PIPELINE
+================================================
+
+IMPORTANT:
+Do not redesign the application.
+Do not change the overall UI architecture.
+Make targeted changes to the existing manuscript-generation pipeline.
+
+The goal is a concise, publication-style systematic review manuscript based strictly on the actual final included evidence and the stored review protocol.
+
+================================================
+1. EVIDENCE LOCK — CRITICAL
+================================================
+
+The final evidence set is:
+
+includedRecords
+
+This must represent ALL final INCLUDE studies.
+
+Do NOT truncate includedRecords.
+
+Do NOT use a 90/99-study limit on includedRecords.
+
+If an AI-processing limit is required, create a separate variable:
+
+const synthesisInputRecords =
+  includedRecords.slice(0, AI_SYNTHESIS_LIMIT);
+
+The AI-processing limit must never change:
+- PRISMA counts
+- included study counts
+- manuscript evidence counts
+- screening ledger
+- final evidence set
+
+The final manuscript must always use:
+
+includedRecords.length
+
+for the actual number of included studies.
+
+================================================
+2. TITLE — GENERATE FROM ACTUAL INCLUDED RECORDS
+================================================
+
+The final manuscript title must be suggested from the actual included studies.
+
+Do NOT ask the user to provide the records again.
+
+Use the actual includedRecords already present in application state.
+
+Provide the AI with the available information from the included records, such as:
+- record ID
+- title
+- abstract
+- authors
+- publication year if available
+- keywords if available
+- StudyCharacteristic fields if available
+
+Use only fields that actually exist in types/slr.ts.
+
+Generate approximately 5 candidate titles.
+
+Titles must:
+- accurately represent the included evidence;
+- reflect recurring concepts across the included studies;
+- be suitable for a systematic review manuscript;
+- be concise;
+- not introduce unsupported concepts;
+- not fabricate findings;
+- not be broader than the evidence;
+- not be narrower than the evidence;
+- not mention AI;
+- not mention this application/software;
+- not simply concatenate keywords.
+
+Return structured data:
+
+{
+  "titles": [
+    "...",
+    "...",
+    "...",
+    "...",
+    "..."
+  ]
+}
+
+The user should be able to select a title.
+
+The selected title becomes the manuscript title.
+
+If title generation fails, use the user's configured title as fallback.
+
+Prefer incorporating title generation into the existing synthesis AI call to reduce API usage.
+
+================================================
+3.4 NARRATIVE AND THEMATIC SYNTHESIS
+================================================
+
+THIS SECTION MUST BE SHORT AND JOURNAL-LIKE.
+
+The current implementation produces overly long Section 3.4 content.
+
+Do NOT generate a long AI report.
+
+Section 3.4 should normally contain:
+
+3.4 Narrative and Thematic Synthesis
+
+A short introductory paragraph.
+
+Then approximately 3–5 thematic subsections ONLY IF supported by the included evidence.
+
+Example:
+
+3.4.1 System-Level Decarbonisation
+
+Concise integrated synthesis.
+
+3.4.2 Alternative Fuel Pathways
+
+Concise integrated synthesis.
+
+3.4.3 Technological and Operational Strategies
+
+Concise integrated synthesis.
+
+Do NOT force 3–5 themes if the evidence supports fewer themes.
+
+If only 2 strong themes exist, use 2.
+
+If one dominant theme exists, use one.
+
+Do NOT manufacture additional themes merely to make the section look comprehensive.
+
+------------------------------------------------
+3.4 LENGTH LIMIT
+------------------------------------------------
+
+Target total length:
+
+approximately 600–1,000 words maximum.
+
+Prefer the shorter end when the evidence is limited.
+
+Each thematic subsection should normally be:
+
+approximately 150–250 words maximum.
+
+The introductory paragraph should be approximately 50–100 words.
+
+Do not exceed these limits unless the evidence genuinely requires additional explanation.
+
+Do NOT repeat the same information across themes.
+
+Do NOT repeat the Results section.
+
+Do NOT repeat the Discussion section.
+
+Do NOT provide an exhaustive description of every study.
+
+The purpose of Section 3.4 is to synthesize the major patterns across the included studies.
+
+------------------------------------------------
+3.4 THEMATIC HEADINGS
+------------------------------------------------
+
+The current heading:
+
+“Decarbonisation is framed as a system-level transition in fuel supply, fleets, and infrastructure”
+
+is TOO LONG and NOT suitable as a manuscript subsection heading.
+
+Headings must normally be 2–6 words.
+
+They must be concise noun phrases.
+
+GOOD:
+- System-Level Decarbonisation
+- Alternative Fuel Pathways
+- Technological Innovation
+- Fleet and Infrastructure Transition
+- Operational Decarbonisation
+
+BAD:
+- Decarbonisation is framed as a system-level transition in fuel supply, fleets, and infrastructure
+- The literature demonstrates the importance of alternative fuels for reducing emissions
+- Studies show that technological innovation can improve environmental performance
+
+The heading identifies the theme.
+
+The prose explains the evidence.
+
+Do not use sentence-like headings.
+
+Do not use mini-abstracts as headings.
+
+------------------------------------------------
+3.4 THEME DISCOVERY
+------------------------------------------------
+
+Themes must be derived from the actual included evidence.
+
+Do NOT use a hard-coded keyword classifier.
+
+Remove or stop using legacy mechanisms such as:
+- outcomeTerms
+- technologyTerms
+- methodsTerms
+- classifyTheme
+- classifyRecordTheme
+- buildClusters
+- themeDefinitions
+- hard-coded maritime categories
+- title substring matching for thematic classification
+
+Do not classify studies simply because their titles contain certain keywords.
+
+Themes should reflect recurring concepts, approaches, interventions, outcomes, contexts, or relationships actually present across the included studies.
+
+If evidence does not support a thematic distinction, do not create one.
+
+------------------------------------------------
+3.4 NARRATIVE STYLE
+------------------------------------------------
+
+The synthesis must be an integrated narrative.
+
+DO NOT write an annotated bibliography.
+
+Avoid:
+
+“Author A found...”
+“Author B reported...”
+“Author C examined...”
+“Author D showed...”
+
+Do not write one paragraph per study.
+
+Instead:
+
+1. Introduce the broad pattern.
+2. Integrate evidence from multiple studies.
+3. Compare or contrast studies where appropriate.
+4. Interpret the pattern.
+5. Identify a gap only when the included evidence supports it.
+
+Use transitions between studies and concepts.
+
+The section should read like a scholarly synthesis rather than a list of papers.
+
+Do not force every study to appear explicitly in the prose.
+
+================================================
+4. CITATION ARCHITECTURE
+================================================
+
+Do NOT hard-code APA, IEEE, Harvard, Vancouver, Chicago, or any other citation style into the AI prompt.
+
+The user's selected citation style controls citation formatting.
+
+Prefer AI output such as:
+
+{
+  "subtopics": [
+    {
+      "title": "System-Level Decarbonisation",
+      "prose": "...",
+      "supportingRecordIds": [
+        "record-id-1",
+        "record-id-4",
+        "record-id-7"
+      ]
+    }
+  ]
+}
+
+Every supportingRecordId must correspond to an actual included record.
+
+Do not fabricate record IDs.
+
+The application should format citations after the AI response according to the user's selected citation style.
+
+================================================
+5. 3.2 CHARACTERISTICS OF INCLUDED STUDIES
+================================================
+
+Keep this section concise.
+
+Do NOT display publication-year distribution.
+
+Do NOT display:
+
+“Not reported”
+
+as a category.
+
+Do NOT display:
+
+“Not established from citation metadata”
+
+If a characteristic has no meaningful reported values across the included studies, OMIT that characteristic completely.
+
+For example, do NOT show:
+
+Context | Not reported | 11
+
+Instead, only display characteristics for which actual information exists.
+
+Example:
+
+| Characteristic | Category | n |
+|---|---|---:|
+| Study/intervention category | Energy, emissions and environmental performance | 11 |
+
+Use actual StudyCharacteristic data.
+
+Do NOT infer characteristics from:
+- title
+- keywords
+- journal
+- authors
+- publication year
+
+unless the information has actually been extracted into the corresponding StudyCharacteristic field.
+
+------------------------------------------------
+COUNTING
+------------------------------------------------
+
+The unit of analysis is ONE INCLUDED STUDY.
+
+Never count:
+- characters
+- string length
+- object properties
+- JSON fields
+- tokens
+- keyword occurrences
+
+For 11 included studies, a category count can never be 161.
+
+Every displayed count must represent the number of included records.
+
+================================================
+6. RESULTS
+================================================
+
+Results must be based on the complete includedRecords set.
+
+Do not fabricate:
+- sample sizes
+- datasets
+- effect sizes
+- confidence intervals
+- p-values
+- I²
+- statistical significance
+- experimental outcomes
+- model performance
+- real-world emission reductions
+
+if they are not available.
+
+Maintain distinctions between:
+- measured outcomes;
+- calculated/estimated outcomes;
+- proxy indicators;
+- model-predicted outcomes;
+- simulation outcomes;
+- intended or claimed reductions.
+
+Model accuracy does not equal demonstrated decarbonisation.
+
+Simulation results do not automatically equal real-world outcomes.
+
+================================================
+7. DISCUSSION
+================================================
+
+Use concise manuscript-style subsections.
+
+Recommended structure:
+
+4. Discussion
+
+4.1 Principal Findings
+4.2 Interpretation of the Evidence
+4.3 Implications
+4.4 Research Gaps and Future Directions
+4.5 Limitations of the Review
+
+Do not create long sentence-like headings.
+
+Discussion must interpret the Results rather than repeat them.
+
+Do not introduce unsupported findings.
+
+Do not turn the Discussion into a study-by-study summary.
+
+Do not exaggerate the certainty of evidence.
+
+================================================
+8. CONCLUSION
+================================================
+
+The Conclusion must summarize only findings supported by:
+- includedRecords
+- Results
+- Narrative/Thematic Synthesis
+
+Do not introduce new evidence.
+
+Do not make claims stronger than the evidence allows.
+
+================================================
+9. FULL-TEXT RESTRICTION
+================================================
+
+This workflow does NOT perform full-text retrieval or full-text eligibility assessment.
+
+Therefore, NEVER claim that:
+- full-text screening occurred;
+- full-text eligibility was assessed;
+- full texts were unavailable;
+- studies were excluded because full text could not be retrieved.
+
+Do not create a full-text PRISMA stage.
+
+If no full-text assessment occurred:
+
+soughtRetrieval = 0
+notRetrieved = 0
+assessed = 0
+assessedExcluded = 0
+
+PRISMA must reflect the actual workflow.
+
+================================================
+10. MANUSCRIPT LANGUAGE — NO AI SCREENING
+================================================
+
+The final manuscript must NOT mention:
+
+- AI screening
+- AI-assisted screening
+- artificial intelligence screening
+- language models
+- generative AI
+- screening software
+- this application
+
+Use neutral methodological wording describing screening against predefined eligibility criteria using the available bibliographic information.
+
+================================================
+11. APPENDIX A — ELIGIBILITY CRITERIA
+================================================
+
+The final manuscript MUST contain:
+
+Appendix A. Eligibility Criteria
+
+A.1 Inclusion Criteria
+
+A.2 Exclusion Criteria
+
+The criteria must come DIRECTLY from the stored review protocol.
+
+If stored as arrays, render them as numbered items.
+
+If stored as structured fields, render the actual stored values.
+
+CRITICAL:
+
+Do NOT ask AI to generate the criteria.
+
+Do NOT rewrite them.
+
+Do NOT summarize them.
+
+Do NOT merge them.
+
+Do NOT expand them.
+
+Do NOT infer missing criteria.
+
+The protocol is the source of truth.
+
+If criteria are not stored, do not invent them.
+
+================================================
+12. APPENDIX B — SEARCH STRATEGY AND SEARCH STRINGS
+================================================
+
+The final manuscript MUST contain:
+
+Appendix B. Search Strategy and Search Strings
+
+For every search source/database stored in the application, render:
+
+Database/Source:
+[exact stored value]
+
+Search fields:
+[exact stored value, if available]
+
+Search date:
+[exact stored value, if available]
+
+Search string:
+[EXACT STORED QUERY]
+
+If multiple databases/sources exist, render each separately.
+
+The query must be reproduced exactly as stored.
+
+DO NOT:
+- rewrite the query;
+- shorten the query;
+- clean the query;
+- reconstruct the query;
+- paraphrase the query;
+- generate a new query using AI.
+
+The stored search query is the source of truth.
+
+================================================
+13. INSPECT ACTUAL DATA STRUCTURES
+================================================
+
+Before modifying FullReviewReport.tsx, inspect:
+
+types/slr.ts
+
+and identify the actual fields for:
+
+- inclusion criteria
+- exclusion criteria
+- database/source
+- search fields
+- search date
+- exact search string/query
+- StudyCharacteristic fields
+- SynthesisResult
+
+Do not assume field names.
+
+Trace the data flow:
+
+Protocol & PICO Objectives
+→ Search Strings & Sources
+→ application state
+→ App.tsx
+→ FullReviewReport.tsx
+
+Ensure the final report receives the actual stored protocol and search information.
+
+================================================
+14. FINAL MANUSCRIPT ORDER
+================================================
+
+Use:
+
+Title
+
+Abstract
+
+Keywords
+
+1. Introduction
+
+2. Methods
+2.1 Review Design
+2.2 Information Sources and Search Strategy
+2.3 Eligibility Criteria
+2.4 Study Selection
+2.5 Data Extraction and Study Characteristics
+2.6 Synthesis Approach
+
+3. Results
+3.1 Study Selection
+3.2 Characteristics of Included Studies
+3.3 Evidence Overview
+3.4 Narrative and Thematic Synthesis
+
+4. Discussion
+4.1 Principal Findings
+4.2 Interpretation of the Evidence
+4.3 Implications
+4.4 Research Gaps and Future Directions
+4.5 Limitations of the Review
+
+5. Conclusions
+
+Appendix A. Eligibility Criteria
+A.1 Inclusion Criteria
+A.2 Exclusion Criteria
+
+Appendix B. Search Strategy and Search Strings
+B.1 [Database/source]
+B.2 [Database/source]
+...
+
+References
+
+Do not force unsupported empty subsections into the manuscript.
+
+Appendix A and Appendix B must appear whenever the corresponding stored data exist.
+
+================================================
+15. APPENDICES MUST APPEAR IN ALL EXPORTS
+================================================
+
+Appendix A and Appendix B must appear in:
+
+1. On-screen Consolidated Manuscript
+2. Markdown export
+3. Word/DOCX export
+4. Any other manuscript export
+
+Do not implement them only for the on-screen display.
+
+Use the same deterministic data for all formats.
+
+================================================
+16. SCREENING AUDIT
+================================================
+
+The screening audit table must use the actual screening ledger.
+
+Do NOT pass only includedRecords if the table is intended to show all screened decisions.
+
+Use the appropriate complete screened-record set from the application state.
+
+Final INCLUDE studies remain the only evidence eligible for:
+- Results
+- synthesis
+- Discussion
+- conclusions
+
+================================================
+17. FINAL VALIDATION
+================================================
+
+Before considering the implementation complete, verify:
+
+EVIDENCE
+[ ] includedRecords contains ALL final included studies.
+[ ] includedRecords is never truncated.
+[ ] AI processing limits do not modify includedRecords.
+[ ] PRISMA included count equals includedRecords.length.
+
+TITLE
+[ ] Title candidates are generated from actual included records.
+[ ] The title prompt contains actual record data.
+[ ] Approximately 5 candidates are generated.
+[ ] No unsupported concepts are introduced.
+[ ] User can select a title.
+[ ] Selected title appears in final manuscript.
+
+SECTION 3.4
+[ ] Section 3.4 is concise.
+[ ] Target total length is approximately 600–1,000 words maximum.
+[ ] Each thematic subsection is approximately 150–250 words maximum.
+[ ] Normally no more than 3–5 themes.
+[ ] Fewer themes are used when evidence is limited.
+[ ] No artificial themes are created.
+[ ] Headings are 2–6 words where possible.
+[ ] Headings are noun phrases.
+[ ] No sentence-like headings.
+[ ] No annotated bibliography.
+[ ] No one-study-per-paragraph structure.
+[ ] No hard-coded keyword classifier.
+[ ] Themes come from actual included evidence.
+
+CHARACTERISTICS
+[ ] No publication-year distribution in Section 3.2.
+[ ] No “Not reported” category.
+[ ] Characteristics with no usable data are omitted.
+[ ] Counts represent studies.
+[ ] No impossible values such as 161 for 11 studies.
+
+METHODS / PRISMA
+[ ] No full-text retrieval stage is claimed.
+[ ] No full-text eligibility assessment is claimed.
+[ ] No AI screening terminology appears in manuscript.
+[ ] PRISMA counts reflect actual screening ledger.
+
+APPENDIX A
+[ ] Appendix A exists.
+[ ] A.1 Inclusion Criteria exists.
+[ ] A.2 Exclusion Criteria exists.
+[ ] Criteria exactly reflect stored protocol.
+[ ] Criteria are not AI-generated.
+
+APPENDIX B
+[ ] Appendix B exists.
+[ ] Every stored database/source is included.
+[ ] Exact stored search strings are displayed.
+[ ] Search fields are displayed where stored.
+[ ] Search dates are displayed where stored.
+[ ] Queries are not rewritten or generated by AI.
+
+EXPORTS
+[ ] Appendices appear on screen.
+[ ] Appendices appear in Markdown.
+[ ] Appendices appear in DOCX.
+[ ] Title appears consistently in all outputs.
+
+QUALITY
+[ ] No fabricated evidence.
+[ ] No fabricated statistics.
+[ ] No fabricated study characteristics.
+[ ] No unsupported conclusions.
+[ ] TypeScript compiles without errors.
+[ ] Existing application stages continue to work.
+
+IMPORTANT:
+Fix the underlying data flow and rendering logic.
+Do not merely change visible text.
+Do not create placeholder content just to satisfy the checklist.

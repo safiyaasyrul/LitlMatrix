@@ -202,14 +202,79 @@ const suggestReviewTitles = (records: SLRRecord[]) => {
   const evidenceTerms = getRecordTitleTerms(records);
   const subject = evidenceTerms.length >= 2
     ? evidenceTerms.join(", ")
-    : "The Included Literature";
+    : cleanText(records[0]?.title) || "The Included Evidence";
 
   return Array.from(new Set([
-    `${subject}: A Narrative and Thematic Synthesis`,
+    `A Narrative Synthesis of ${subject}`,
     `A PRISMA 2020 Systematic Review of ${subject}`,
-    `${subject}: Methods, Contexts, and Reported Outcomes`,
+    `${subject} Across the Included Studies`,
+    `Evidence on ${subject} in the Included Literature`,
+    `A Systematic Review of ${subject} and Reported Outcomes`,
   ]));
 };
+
+const buildTitleSourceRecords = (
+  records: SLRRecord[],
+  characteristics: StudyCharacteristic[]
+) => {
+  const characteristicMap = new Map(
+    characteristics.map((characteristic) => [
+      characteristic.recordId,
+      characteristic,
+    ])
+  );
+  const compactAbstracts = records.length > AI_SYNTHESIS_LIMIT;
+
+  return records.map((record) => {
+    const characteristic = characteristicMap.get(record.id);
+    const sourceRecord: Record<string, unknown> = {
+      id: record.id,
+      title: cleanText(record.title),
+      abstract: compactAbstracts
+        ? cleanText(record.abstract).slice(0, 1200)
+        : cleanText(record.abstract),
+      authors: Array.isArray(record.authors) ? record.authors : [],
+      year: cleanText(record.year),
+    };
+
+    if (characteristic) {
+      sourceRecord.studyCharacteristic = Object.fromEntries(
+        Object.entries(characteristic).filter(([, value]) => {
+          if (Array.isArray(value)) return value.length > 0;
+          return cleanText(value) !== "";
+        })
+      );
+    }
+
+    return sourceRecord;
+  });
+};
+
+const sanitizeTitleCandidates = (value: unknown) => {
+  if (!Array.isArray(value)) return [];
+
+  const prohibitedTerms = /\b(ai|artificial intelligence|software|automated screening|this application)\b/i;
+
+  return value
+    .map((title) => cleanText(title).replace(/^["']|["']$/g, ""))
+    .filter(
+      (title) =>
+        title.length >=  twentyChars &&
+        title.length <= 180 &&
+        !prohibitedTerms.test(title)
+    )
+    .filter((title, index, titles) =>
+      titles.findIndex((candidate) => candidate.toLowerCase() === title.toLowerCase()) === index
+    )
+    .slice(0, 5);
+};
+
+const twentyChars = 20;
+
+const completeTitleCandidates = (
+  candidates: string[],
+  fallbackTitles: string[]
+) => Array.from(new Set([...candidates, ...fallbackTitles])).slice(0, 5);
 
 /*
  * Conservative fallback only. It does not invent themes or force studies
@@ -380,9 +445,25 @@ WRITING RULES:
 
 36. If the supplied evidence is insufficient to establish a meaningful thematic pattern, state this explicitly rather than inferring one.
 
+In the same response, generate exactly five concise, publication-ready
+candidate titles for the systematic literature review. Use only the complete
+title evidence base supplied separately below to determine the review scope.
+Do not simply concatenate keywords, introduce unsupported concepts, fabricate
+findings, write a protocol title, or mention artificial intelligence, AI
+screening, software, or this application. Do not make the title narrower or
+broader than the included evidence. Avoid a colon unless it materially
+improves clarity.
+
 RETURN VALID JSON ONLY:
 
 {
+  "titles": [
+    "Candidate title 1",
+    "Candidate title 2",
+    "Candidate title 3",
+    "Candidate title 4",
+    "Candidate title 5"
+  ],
   "subtopics": [
     {
       "title": "Evidence-grounded thematic domain",

@@ -5,8 +5,9 @@ import {
   AlertCircle,
   Download,
   FileText,
+  KeyRound,
 } from "lucide-react";
-import { AIRequestError, callAI, parseJSONLoose } from "../utils/aiClient";
+import { AIProviderConfig, AIRequestError, callAI, parseJSONLoose } from "../utils/aiClient";
 import StudyCharacteristicsTable from "./StudyCharacteristicsTable";
 
 const STRICT_SCREENING_THRESHOLD = 85;
@@ -17,7 +18,8 @@ interface ScreeningSectionProps {
   screening: Record<string, ScreeningDecision>;
   onUpdateScreening: (screening: Record<string, ScreeningDecision>) => void;
   protocol: SLRProtocol;
-  aiConfig: any;
+  aiConfig: AIProviderConfig;
+  onReplaceGeminiApiKey?: (apiKey: string) => void;
 }
 
 export default function ScreeningSection({
@@ -27,10 +29,12 @@ export default function ScreeningSection({
   onUpdateScreening,
   protocol,
   aiConfig,
+  onReplaceGeminiApiKey,
 }: ScreeningSectionProps) {
   const [runningScreening, setRunningScreening] = useState(false);
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [replacementGeminiKey, setReplacementGeminiKey] = useState("");
   const screeningRunRef = useRef(false);
   const screeningPool = records;
 
@@ -91,7 +95,7 @@ export default function ScreeningSection({
   };
 
   // AI-assisted screening
-  const runAIScreening = async () => {
+  const runAIScreening = async (configOverride?: AIProviderConfig) => {
     // State updates are asynchronous; the ref prevents two rapid clicks from
     // creating overlapping AI batches before the button disables.
     if (screeningPool.length === 0 || screeningRunRef.current) return;
@@ -147,7 +151,7 @@ Return ONLY a JSON array:
           const text = await callAI(
             prompt,
             "You are a medical librarian and PRISMA screening methodologist.",
-            aiConfig,
+            configOverride || aiConfig,
             1200
           );
           const parsed = parseJSONLoose(text);
@@ -175,13 +179,17 @@ Return ONLY a JSON array:
           const isManagedLimit =
             (err instanceof AIRequestError && err.status === 429) ||
             /daily managed-ai limit reached/i.test(err?.message || "");
+          const isProviderQuotaError =
+            /quota|rate limit|resource[_\s-]?exhausted|exceeded your current quota/i.test(
+              err?.message || ""
+            );
           setErrorMessage(
             isManagedLimit
               ? `Daily managed-AI limit reached. Completed decisions were kept; ${remainingUnresolved} record${remainingUnresolved === 1 ? "" : "s"} remain unresolved. Resume later or select a configured direct provider in AI Configuration.`
               : `AI screening could not complete batch ${b + 1}. Completed decisions were kept; affected records remain unresolved. ${err?.message || "Request failed."}`
           );
           onUpdateScreening({ ...nextScreening });
-          if (isManagedLimit) {
+          if (isManagedLimit || isProviderQuotaError) {
             setProgress(Math.round((b / totalBatches) * 100));
             break;
           }
@@ -200,14 +208,63 @@ Return ONLY a JSON array:
     <div id="screening-section-container" className="space-y-6">
       {/* Error / Notice message */}
       {errorMessage && (
-        <div className="p-3.5 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl text-xs flex items-center justify-between font-mono">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>{errorMessage}</span>
+        <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-amber-900">
+          <div className="flex items-start justify-between gap-3 text-xs font-mono">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <span>{errorMessage}</span>
+            </div>
+            <button onClick={() => setErrorMessage(null)} className="shrink-0 font-bold text-amber-700 hover:text-amber-900">
+              ✕
+            </button>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-amber-700 hover:text-amber-900 font-bold">
-            ✕
-          </button>
+          {aiConfig.provider === "gemini" && unresolvedCount > 0 && onReplaceGeminiApiKey && (
+            <form
+              className="rounded-lg border border-amber-200 bg-white p-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const nextKey = replacementGeminiKey.trim();
+                if (!nextKey) return;
+                onReplaceGeminiApiKey(nextKey);
+                setReplacementGeminiKey("");
+                void runAIScreening({ ...aiConfig, provider: "gemini", apiKey: nextKey });
+              }}
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <KeyRound className="h-4 w-4 text-indigo-600" />
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Continue with another Gemini API key
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    The new key replaces the current Gemini key in this browser, then resumes the {unresolvedCount} unresolved record{unresolvedCount === 1 ? "" : "s"}.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="password"
+                  autoComplete="off"
+                  required
+                  value={replacementGeminiKey}
+                  onChange={(event) => setReplacementGeminiKey(event.target.value)}
+                  placeholder="Enter a new Gemini API key"
+                  aria-label="New Gemini API key"
+                  className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+                <button
+                  type="submit"
+                  disabled={runningScreening || !replacementGeminiKey.trim()}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:bg-slate-300"
+                >
+                  Save key & resume
+                </button>
+              </div>
+              <p className="mt-2 text-[10px] text-slate-500">
+                Direct-provider keys stay in browser storage and are sent directly to Gemini.
+              </p>
+            </form>
+          )}
         </div>
       )}
 
@@ -228,7 +285,7 @@ Return ONLY a JSON array:
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={runAIScreening}
+              onClick={() => void runAIScreening()}
               disabled={runningScreening || screeningPool.length === 0}
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-mono font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 rounded-lg shadow-xs transition-colors cursor-pointer"
             >

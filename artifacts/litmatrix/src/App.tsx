@@ -763,6 +763,16 @@ export default function App() {
               onUpdateScreening={setScreening}
               protocol={protocol}
               aiConfig={activeAIConfig}
+              onReplaceGeminiApiKey={(apiKey) => {
+                setKeysConfig((current) => ({
+                  ...current,
+                  activeProvider: "gemini",
+                  gemini: {
+                    ...current.gemini,
+                    apiKey,
+                  },
+                }));
+              }}
             />
           )}
 

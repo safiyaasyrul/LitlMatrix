@@ -11,6 +11,7 @@ import {
 import { Download, Copy, Printer, Check, BookOpen, FileText, CheckCircle2, ShieldAlert, Sparkles, Layers, SlidersHorizontal, Quote } from "lucide-react";
 import PrismaDiagram from "./PrismaDiagram";
 import { getIncludedEvidenceKey } from "../utils/evidenceKey";
+import { buildManuscriptAbstract } from "../utils/manuscriptAbstract";
 
 interface FullReviewReportProps {
   protocol: SLRProtocol;
@@ -46,28 +47,6 @@ const countLabels = (labels: string[]) =>
 
 const summarizeLandscape = (counts: LandscapeCount[], limit = 4) =>
   counts.slice(0, limit).map((item) => `${item.label} (${item.count})`).join(", ");
-
-const getTitleKeywords = (title: string) => {
-  const stopWords = new Set([
-    "a", "an", "and", "for", "from", "of", "on", "the", "to",
-    "narrative", "systematic", "synthesis", "thematic", "review",
-  ]);
-
-  return title
-    .replace(/[^A-Za-z0-9\s-]/g, " ")
-    .split(/\s+/)
-    .map((word) => word.replace(/^-+|-+$/g, ""))
-    .filter((word) =>
-      word.length >= 4 &&
-      !stopWords.has(word.toLowerCase()) &&
-      !/^[A-Z0-9]{2,8}$/.test(word) &&
-      /[aeiouy]/i.test(word)
-    )
-    .map((word) => word.toLowerCase())
-    .filter((word, index, words) => words.indexOf(word) === index)
-    .slice(0, 6)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
-};
 
 const isReportedValue = (value?: string) => {
   const normalized = value?.trim();
@@ -235,28 +214,14 @@ export default function FullReviewReport({
       ? "Excluded"
       : "Not decided";
 
-  // Structured Abstract generator
-  const getAbstractContent = () => {
-    const bg = recordGroundedRationale;
-    const obj = `This systematic review aimed to ${objectives.map((o) => o.toLowerCase().replace(/^to\s+/, "")).join(", and to ")}, addressing three principal research questions: ${questions.map((q, i) => `RQ${i + 1} (${q.replace(/^RQ\d+:\s*/, "")})`).join(", ")}.`;
-    const searchDbs = protocol.searchStrategies.map((s) => s.database).join(", ") || "major electronic bibliographic databases";
-    const meth = `The review draws on records from ${searchDbs}. Screening decisions follow predefined eligibility criteria, and the included evidence is organized for narrative and thematic synthesis.`;
-    
-    const res = `${includedRecords.length} records were retained for synthesis from ${counts.afterDedup || counts.screened || includedRecords.length} records after deduplication. Results are reported only for characteristics and themes supported by the final included evidence.`;
-    const concl = `The review summarizes the principal patterns supported by the final included records without quantitative pooling or claims beyond the supplied evidence.`;
-    const titleKeywords = getTitleKeywords(manuscriptTitle);
-    const keywords = [
-      ...titleKeywords,
-      protocol.reviewType || "Systematic Literature Review",
-      "Evidence Synthesis",
-      "Narrative Synthesis",
-      ...evidenceOverview.slice(0, 2).map((theme) => theme.label),
-    ].filter(Boolean);
-
-    return { bg, obj, meth, res, concl, keywords };
-  };
-
-  const abstract = getAbstractContent();
+  const abstract = buildManuscriptAbstract({
+    protocol,
+    manuscriptTitle,
+    includedRecords,
+    characteristics,
+    synthesis,
+  });
+  const abstractReady = !abstract.validationErrors?.length;
 
   const markdownCountTable = (heading: string, values: LandscapeCount[]) => {
     let table = `#### ${heading}\n\n| Description | Records |\n| --- | ---: |\n`;
@@ -272,11 +237,7 @@ export default function FullReviewReport({
     md += `\n---\n\n`;
 
     md += `## Abstract\n\n`;
-    md += `**Background:** ${abstract.bg}\n\n`;
-    md += `**Objectives:** ${abstract.obj}\n\n`;
-    md += `**Methods:** ${abstract.meth}\n\n`;
-    md += `**Results:** ${abstract.res}\n\n`;
-    md += `**Discussion and Conclusion:** ${abstract.concl}\n\n`;
+    md += `${abstract.text}\n\n`;
     md += `**Keywords:** ${abstract.keywords.join(", ")}\n\n`;
     md += `---\n\n`;
 
@@ -358,7 +319,7 @@ export default function FullReviewReport({
     md += `### 4.3 Implications\n${discussion.item23dImplications}\n\n`;
     md += `### 4.5 Limitations of the Review\n${discussion.item23cLimitationsOfReviewProcess}\n\n`;
 
-    md += `## 5. Conclusions\n\n${abstract.concl}\n\n`;
+    md += `## 5. Conclusions\n\n${discussion.item23dImplications}\n\n`;
 
     if (protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) {
       md += `## Appendix A. Eligibility Criteria\n\n`;
@@ -466,11 +427,7 @@ export default function FullReviewReport({
 
   <div class="abstract-box">
     <h2 style="margin-top: 0; border-bottom: none; font-size: 13pt;">Abstract</h2>
-    <p><strong>Background:</strong> ${abstract.bg}</p>
-    <p><strong>Objectives:</strong> ${abstract.obj}</p>
-    <p><strong>Methods:</strong> ${abstract.meth}</p>
-    <p><strong>Results:</strong> ${abstract.res}</p>
-    <p><strong>Discussion and Conclusion:</strong> ${abstract.concl}</p>
+    <p>${abstract.text}</p>
     <p><strong>Keywords:</strong> <em>${abstract.keywords.join(", ")}</em></p>
   </div>
 
@@ -564,7 +521,7 @@ export default function FullReviewReport({
   <p>${discussion.item23cLimitationsOfReviewProcess}</p>
 
   <h2>5. Conclusions</h2>
-  <p>${abstract.concl}</p>
+  <p>${discussion.item23dImplications}</p>
 
   ${(protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) ? `
     <h2>Appendix A. Eligibility Criteria</h2>
@@ -621,28 +578,36 @@ export default function FullReviewReport({
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg shadow-2xs transition-colors cursor-pointer"
+            disabled={!abstractReady}
+            title={!abstractReady ? abstract.validationErrors?.join(" ") : undefined}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg shadow-2xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
             {copied ? "Copied!" : "Copy Markdown"}
           </button>
           <button
             onClick={handleDownload}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-colors cursor-pointer"
+            disabled={!abstractReady}
+            title={!abstractReady ? abstract.validationErrors?.join(" ") : undefined}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Download className="w-3.5 h-3.5" />
             Download Markdown (.md)
           </button>
           <button
             onClick={handleDownloadDoc}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-semibold text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
+            disabled={!abstractReady}
+            title={!abstractReady ? abstract.validationErrors?.join(" ") : undefined}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-semibold text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <FileText className="w-3.5 h-3.5 text-indigo-600" />
             Download Word (.doc)
           </button>
           <button
             onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+            disabled={!abstractReady}
+            title={!abstractReady ? abstract.validationErrors?.join(" ") : undefined}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Printer className="w-3.5 h-3.5" />
             Print / PDF
@@ -665,39 +630,29 @@ export default function FullReviewReport({
           </div>
         </header>
 
-        {/* Structured Academic Abstract */}
+        {/* Publication-ready abstract */}
         <section className="bg-slate-50/80 border border-slate-200 p-6 sm:p-8 rounded-xl space-y-4">
           <div className="flex items-center justify-between border-b border-slate-200 pb-2">
             <h2 className="text-base font-bold text-slate-900 font-mono flex items-center gap-2 uppercase tracking-wide">
               <BookOpen className="w-4 h-4 text-indigo-600" />
-              Structured Academic Abstract
+              Abstract
             </h2>
-            <span className="text-[10px] font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
-              Publication Ready
+            <span className={`text-[10px] font-mono border px-2 py-0.5 rounded ${
+              abstractReady
+                ? "text-indigo-700 bg-indigo-50 border-indigo-200"
+                : "text-amber-800 bg-amber-50 border-amber-200"
+            }`}>
+              {abstractReady ? "Publication Ready" : "Needs More Topic Evidence"}
             </span>
           </div>
 
           <div className="space-y-3 text-xs sm:text-sm text-slate-700 leading-relaxed font-sans text-justify">
-            <p>
-              <strong className="font-mono font-bold text-slate-900 uppercase text-[11px] mr-1.5">Background:</strong>
-              {abstract.bg}
-            </p>
-            <p>
-              <strong className="font-mono font-bold text-slate-900 uppercase text-[11px] mr-1.5">Objectives:</strong>
-              {abstract.obj}
-            </p>
-            <p>
-              <strong className="font-mono font-bold text-slate-900 uppercase text-[11px] mr-1.5">Methods:</strong>
-              {abstract.meth}
-            </p>
-            <p>
-              <strong className="font-mono font-bold text-slate-900 uppercase text-[11px] mr-1.5">Results:</strong>
-              {abstract.res}
-            </p>
-            <p>
-              <strong className="font-mono font-bold text-slate-900 uppercase text-[11px] mr-1.5">Discussion & Conclusion:</strong>
-              {abstract.concl}
-            </p>
+            {!abstractReady && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-left text-amber-900">
+                A publication-ready abstract could not be validated. Add more topic-specific included-record evidence before exporting.
+              </div>
+            )}
+            <p>{abstract.text}</p>
             <div className="pt-2 border-t border-slate-200 text-xs font-mono text-slate-600">
               <strong className="text-slate-900 mr-1.5 font-bold">Keywords:</strong>
               <span className="text-slate-700 italic">{abstract.keywords.join(", ")}</span>
@@ -919,7 +874,7 @@ export default function FullReviewReport({
 
         <section className="space-y-3">
           <h2 className="text-xl font-bold text-slate-900 border-b border-slate-100 pb-2">5. Conclusions</h2>
-          <p className="text-xs sm:text-sm text-slate-700 leading-relaxed text-justify">{abstract.concl}</p>
+          <p className="text-xs sm:text-sm text-slate-700 leading-relaxed text-justify">{discussion.item23dImplications}</p>
         </section>
 
         {(protocol.eligibilityCriteria.inclusion.length > 0 || protocol.eligibilityCriteria.exclusion.length > 0) && (

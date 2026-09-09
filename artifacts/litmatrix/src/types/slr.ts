@@ -107,6 +107,7 @@ export interface SynthesisResult {
   subtopics: {
     title: string;
     prose: string;
+    supportingRecordIds?: string[];
   }[];
   keyFindingsTable: {
     topic: string;

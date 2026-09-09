@@ -34,7 +34,6 @@ import SynthesisSection from "./components/SynthesisSection";
 import DiscussionSection from "./components/DiscussionSection";
 import FullReviewReport from "./components/FullReviewReport";
 import ApiKeySection from "./components/ApiKeySection";
-import { MAX_INCLUDED_RECORDS } from "./components/ScreeningSection";
 
 const neutralDiscussionDefaults: Pick<
   DiscussionSections,
@@ -91,26 +90,8 @@ import {
 
 const boundPersistedScreening = (
   decisions: Record<string, ScreeningDecision>,
-  sourceRecords: SLRRecord[]
-) => {
-  const bounded = { ...decisions };
-  const included = sourceRecords
-    .filter((record) => bounded[record.id]?.agreed === true)
-    .sort((a, b) => (bounded[b.id]?.score || 0) - (bounded[a.id]?.score || 0));
-
-  included.slice(MAX_INCLUDED_RECORDS).forEach((record) => {
-    const previous = bounded[record.id];
-    bounded[record.id] = {
-      ...previous,
-      decision: "exclude",
-      agreed: false,
-      exclusionReason: "Other",
-      reason: `The record was outside the ${MAX_INCLUDED_RECORDS} strongest protocol matches retained for synthesis.`,
-    };
-  });
-
-  return bounded;
-};
+  _sourceRecords: SLRRecord[]
+) => ({ ...decisions });
 
 export default function App() {
   // Navigation State
@@ -295,8 +276,7 @@ export default function App() {
   const includedRecords = useMemo(() => {
     return records
       .filter((r) => screening[r.id]?.agreed === true)
-      .sort((a, b) => (screening[b.id]?.score || 0) - (screening[a.id]?.score || 0))
-      .slice(0, MAX_INCLUDED_RECORDS);
+      .sort((a, b) => (screening[b.id]?.score || 0) - (screening[a.id]?.score || 0));
   }, [records, screening]);
 
   // Derived excluded records
@@ -749,7 +729,7 @@ export default function App() {
             <FullReviewReport
               protocol={protocol}
               includedRecords={includedRecords}
-              screenedRecords={includedRecords}
+              screenedRecords={records}
               screening={screening}
               characteristics={characteristics}
               synthesis={synthesis}

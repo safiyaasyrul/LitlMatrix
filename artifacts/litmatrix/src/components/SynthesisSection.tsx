@@ -259,7 +259,7 @@ const sanitizeTitleCandidates = (value: unknown) => {
     .map((title) => cleanText(title).replace(/^["']|["']$/g, ""))
     .filter(
       (title) =>
-        title.length >=  twentyChars &&
+        title.length >= 20 &&
         title.length <= 180 &&
         !prohibitedTerms.test(title)
     )
@@ -269,12 +269,19 @@ const sanitizeTitleCandidates = (value: unknown) => {
     .slice(0, 5);
 };
 
-const twentyChars = 20;
-
 const completeTitleCandidates = (
   candidates: string[],
   fallbackTitles: string[]
 ) => Array.from(new Set([...candidates, ...fallbackTitles])).slice(0, 5);
+
+const getTitleEvidenceKey = (records: SLRRecord[]) =>
+  records.map((record) => record.id).sort().join("|");
+
+const limitWords = (value: string, maximum: number) => {
+  const words = cleanText(value).split(/\s+/).filter(Boolean);
+  if (words.length <= maximum) return words.join(" ");
+  return `${words.slice(0, maximum).join(" ").replace(/[,:;.!?]+$/, "")}.`;
+};
 
 /*
  * Conservative fallback only. It does not invent themes or force studies
@@ -321,19 +328,37 @@ const buildFallbackSubtopics = (studies: SynthesisStudy[]) => {
  * Validate AI output without replacing model-discovered themes with
  * hard-coded application categories.
  */
-const sanitizeSubtopics = (value: any): SynthesisResult["subtopics"] => {
+const sanitizeSubtopics = (
+  value: any,
+  validRecordIds: Set<string>
+): SynthesisResult["subtopics"] => {
   if (!Array.isArray(value)) return [];
 
   return value
     .map((item) => ({
-      title: cleanText(item?.title),
-      prose: cleanText(item?.prose),
+      title: cleanText(item?.title)
+        .replace(/^\d+(?:\.\d+)*\.?\s*/, "")
+        .replace(/[.!?]+$/, "")
+        .split(/\s+/)
+        .slice(0, 6)
+        .join(" "),
+      prose: limitWords(item?.prose, 250),
+      supportingRecordIds: Array.isArray(item?.supportingRecordIds)
+        ? Array.from(
+            new Set(
+              item.supportingRecordIds
+                .map((recordId: unknown) => cleanText(recordId))
+                .filter((recordId: string) => validRecordIds.has(recordId))
+            )
+          )
+        : [],
     }))
     .filter((item) => item.title.length > 0 && item.prose.length > 0)
-    .slice(0, 8)
+    .slice(0, 5)
     .map((item, index) => ({
       title: item.title.replace(/^\d+\.\s*/, `${index + 1}. `),
       prose: item.prose,
+      supportingRecordIds: item.supportingRecordIds,
     }));
 };
 
@@ -358,7 +383,11 @@ The thematic structure must be discovered from the supplied evidence. Do not use
 
 The objective is not to summarize every study individually. The objective is to explain what the body of included evidence collectively shows, how studies relate to one another, where they converge or diverge, and what meaningful patterns can be identified from the supplied evidence.
 
-Create approximately 3–8 distinct themes when the evidence supports this. Do not force the literature into a fixed number of themes if fewer or more meaningful themes are clearly supported.
+Create approximately 1–5 distinct themes when the evidence supports them. Do
+not manufacture themes to reach a target. Keep each heading to a concise
+2–6-word noun phrase and each thematic narrative to approximately 150–250
+words. The complete Section 3.4 should remain approximately 600–1,000 words
+maximum and should be shorter when the evidence is limited.
 
 A study may contribute to more than one theme when its supplied information supports that interpretation.
 
@@ -466,8 +495,9 @@ RETURN VALID JSON ONLY:
   ],
   "subtopics": [
     {
-      "title": "Evidence-grounded thematic domain",
-      "prose": "Integrated narrative synthesis in which studies are interrelated through patterns, similarities, differences, and supported interpretations."
+      "title": "Concise Thematic Domain",
+      "prose": "A concise integrated narrative synthesis in which studies are interrelated through patterns, similarities, differences, and supported interpretations.",
+      "supportingRecordIds": ["an-actual-supplied-record-id"]
     }
   ]
 }
@@ -508,14 +538,26 @@ export default function SynthesisSection({
     [includedRecords, characteristics]
   );
 
-  const titleOptions = useMemo(
+  const fallbackTitleOptions = useMemo(
     () => suggestReviewTitles(includedRecords),
     [includedRecords]
   );
+  const titleEvidenceKey = useMemo(
+    () => getTitleEvidenceKey(includedRecords),
+    [includedRecords]
+  );
+  const titleOptions =
+    synthesis.titleCandidateEvidenceKey === titleEvidenceKey &&
+    synthesis.titleCandidates?.length
+      ? synthesis.titleCandidates
+      : fallbackTitleOptions;
+  const titleMatchesEvidence =
+    synthesis.titleCandidateEvidenceKey === titleEvidenceKey;
 
   const suggestedTitle =
-    synthesis.suggestedTitle ||
+    (titleMatchesEvidence ? synthesis.suggestedTitle : "") ||
     titleOptions[0] ||
+    protocol.title ||
     "";
 
   const getGroupedCharacteristics = () => {
@@ -570,11 +612,12 @@ export default function SynthesisSection({
     if (synthesisStudies.length === 0) return;
 
     const fallbackTopics = buildFallbackSubtopics(synthesisStudies);
+    const fallbackTitles = suggestReviewTitles(includedRecords);
 
     const generated: SynthesisResult = {
-      suggestedTitle: suggestReviewTitles(
-        includedRecords
-      )[0],
+      suggestedTitle: protocol.title?.trim() || fallbackTitles[0],
+      titleCandidates: fallbackTitles,
+      titleCandidateEvidenceKey: titleEvidenceKey,
       subtopics: fallbackTopics,
       keyFindingsTable: buildEvidenceTable(
         synthesisStudies,
@@ -602,6 +645,10 @@ export default function SynthesisSection({
      * <= 90 records, every included record is supplied to the writing pass.
      */
     const studiesForAI = synthesisStudies.slice(0, AI_SYNTHESIS_LIMIT);
+    const titleSourceRecords = buildTitleSourceRecords(
+      includedRecords,
+      characteristics
+    );
 
     const prompt = `
 ${INTEGRATED_SYNTHESIS_PROMPT}
@@ -617,6 +664,15 @@ downstream evidence accounting.
 
 SUPPLIED RECORDS:
 ${JSON.stringify(studiesForAI, null, 2)}
+
+COMPLETE TITLE EVIDENCE BASE:
+The following compact representation contains all ${includedRecords.length}
+final included records and is the sole source for the five title candidates.
+${includedRecords.length > AI_SYNTHESIS_LIMIT
+  ? "To keep the request bounded, every record is represented and long abstracts are deterministically limited to their first 1,200 characters."
+  : "The complete available abstracts are supplied."}
+
+${JSON.stringify(titleSourceRecords, null, 2)}
 `;
 
     try {
@@ -632,7 +688,12 @@ ${JSON.stringify(studiesForAI, null, 2)}
         throw new Error("The synthesis response could not be parsed.");
       }
 
-      const subtopics = sanitizeSubtopics(parsed.subtopics);
+      const validRecordIds = new Set(includedRecords.map((record) => record.id));
+      const subtopics = sanitizeSubtopics(parsed.subtopics, validRecordIds);
+      const titleCandidates = completeTitleCandidates(
+        sanitizeTitleCandidates(parsed.titles),
+        fallbackTitleOptions
+      );
 
       if (subtopics.length === 0) {
         throw new Error("No valid thematic synthesis was returned.");
@@ -640,7 +701,12 @@ ${JSON.stringify(studiesForAI, null, 2)}
 
       onUpdateSynthesis({
         ...synthesis,
-        suggestedTitle: suggestReviewTitles(includedRecords)[0],
+        suggestedTitle:
+          titleCandidates[0] ||
+          protocol.title?.trim() ||
+          "Systematic Literature Review Manuscript",
+        titleCandidates,
+        titleCandidateEvidenceKey: titleEvidenceKey,
         subtopics,
         keyFindingsTable: buildEvidenceTable(
           synthesisStudies,
@@ -684,9 +750,9 @@ ${JSON.stringify(studiesForAI, null, 2)}
             </h2>
 
             <p className="text-xs text-emerald-800 mt-1 max-w-3xl">
-              A publication-oriented title is suggested from the
-              review topic and the evidence themes. The title can
-              be edited before being applied to the review protocol.
+              Five publication-oriented titles are generated from the complete
+              final included-record evidence set. The selected title can be
+              edited before being applied to the review protocol.
             </p>
           </div>
 
@@ -715,6 +781,7 @@ ${JSON.stringify(studiesForAI, null, 2)}
                       onUpdateSynthesis({
                         ...synthesis,
                         suggestedTitle: title,
+                        titleCandidateEvidenceKey: titleEvidenceKey,
                       })
                     }
                     className={`w-full text-left px-4 py-3 text-sm rounded-lg border transition-colors cursor-pointer ${
@@ -751,6 +818,7 @@ ${JSON.stringify(studiesForAI, null, 2)}
                 ...synthesis,
                 suggestedTitle:
                   event.target.value,
+                titleCandidateEvidenceKey: titleEvidenceKey,
               })
             }
             placeholder="Enter or edit the review title"

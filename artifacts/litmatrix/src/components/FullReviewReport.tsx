@@ -28,36 +28,10 @@ interface LandscapeCount {
   count: number;
 }
 
-interface EvidenceLandscape {
-  yearCounts: LandscapeCount[];
-  themeCounts: LandscapeCount[];
+interface CharacteristicGroup {
+  heading: string;
+  values: LandscapeCount[];
 }
-
-const themeDefinitions = [
-  {
-    label: "Methods, modelling, and design",
-    terms: ["model", "algorithm", "simulation", "cfd", "neural", "machine learning", "optimization", "framework", "design"],
-  },
-  {
-    label: "Technologies, interventions, and decarbonization",
-    terms: ["fuel", "vessel", "propulsion", "energy", "technology", "retrofit", "renewable", "carbon", "decarbon", "emission"],
-  },
-  {
-    label: "Performance, efficiency, and reported outcomes",
-    terms: ["performance", "efficiency", "reduction", "cost", "accuracy", "outcome", "validation", "result", "impact"],
-  },
-];
-
-const classifyRecordTheme = (record: SLRRecord) => {
-  const searchableText = `${record.title} ${record.abstract || ""}`.toLowerCase();
-  const scores = themeDefinitions.map((theme) =>
-    theme.terms.reduce((score, term) => score + (searchableText.includes(term) ? 1 : 0), 0)
-  );
-  const highestScore = Math.max(...scores);
-  return highestScore > 0
-    ? themeDefinitions[scores.indexOf(highestScore)].label
-    : "Other reported themes";
-};
 
 const countLabels = (labels: string[]) =>
   Array.from(
@@ -68,14 +42,6 @@ const countLabels = (labels: string[]) =>
   )
     .map(([label, count]) => ({ label, count }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-
-const getEvidenceLandscape = (records: SLRRecord[]): EvidenceLandscape => {
-  return {
-    yearCounts: countLabels(records.map((record) => record.year?.trim() || "Undated record"))
-      .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true })),
-    themeCounts: countLabels(records.map(classifyRecordTheme)),
-  };
-};
 
 const summarizeLandscape = (counts: LandscapeCount[], limit = 4) =>
   counts.slice(0, limit).map((item) => `${item.label} (${item.count})`).join(", ");
@@ -102,27 +68,78 @@ const getTitleKeywords = (title: string) => {
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
 };
 
-const getCharacteristicsLandscape = (records: SLRRecord[], characteristics: StudyCharacteristic[]) => {
-  const hasExtractedCharacteristics = characteristics.length > 0;
-  const unavailable = "Not reported in supplied records";
-  return {
-    yearCounts: getEvidenceLandscape(records).yearCounts,
-    categoryCounts: hasExtractedCharacteristics
-      ? countLabels(characteristics.map((item) => item.category?.trim() || item.interventionOrFocus?.trim() || unavailable))
-      : countLabels(records.map(classifyRecordTheme)),
-    contextCounts: hasExtractedCharacteristics
-      ? countLabels(characteristics.map((item) => item.population?.trim() || unavailable))
-      : countLabels(records.map(() => unavailable)),
-    methodologyCounts: hasExtractedCharacteristics
-      ? countLabels(characteristics.map((item) => item.studyDesign?.trim() || unavailable))
-      : countLabels(records.map(() => unavailable)),
-    outcomeCounts: hasExtractedCharacteristics
-      ? countLabels(characteristics.map((item) => item.primaryOutcome?.trim() || unavailable))
-      : countLabels(records.map(() => unavailable)),
-    geographyCounts: hasExtractedCharacteristics
-      ? countLabels(characteristics.map((item) => item.country?.trim() || unavailable))
-      : countLabels(records.map(() => unavailable)),
-  };
+const isReportedValue = (value?: string) => {
+  const normalized = value?.trim();
+  return Boolean(
+    normalized &&
+    !/^not (reported|established|available|specified|applicable)/i.test(normalized)
+  );
+};
+
+const countCharacteristicValues = (
+  characteristics: StudyCharacteristic[],
+  selectValue: (item: StudyCharacteristic) => string | undefined
+) => {
+  const recordIdsByValue = new Map<string, Set<string>>();
+  characteristics.forEach((item) => {
+    const value = selectValue(item)?.trim();
+    if (!isReportedValue(value)) return;
+    if (!recordIdsByValue.has(value!)) recordIdsByValue.set(value!, new Set());
+    recordIdsByValue.get(value!)!.add(item.recordId);
+  });
+
+  return Array.from(recordIdsByValue.entries())
+    .map(([label, recordIds]) => ({ label, count: recordIds.size }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+};
+
+const getCharacteristicGroups = (
+  records: SLRRecord[],
+  characteristics: StudyCharacteristic[]
+): CharacteristicGroup[] => {
+  const includedIds = new Set(records.map((record) => record.id));
+  const includedCharacteristics = characteristics.filter((item) =>
+    includedIds.has(item.recordId)
+  );
+  const groups: CharacteristicGroup[] = [
+    {
+      heading: "Study and intervention categories",
+      values: countCharacteristicValues(
+        includedCharacteristics,
+        (item) => item.category || item.interventionOrFocus
+      ),
+    },
+    {
+      heading: "Populations and contexts",
+      values: countCharacteristicValues(
+        includedCharacteristics,
+        (item) => item.population
+      ),
+    },
+    {
+      heading: "Methodological approaches",
+      values: countCharacteristicValues(
+        includedCharacteristics,
+        (item) => item.studyDesign
+      ),
+    },
+    {
+      heading: "Reported outcome types",
+      values: countCharacteristicValues(
+        includedCharacteristics,
+        (item) => item.primaryOutcome
+      ),
+    },
+    {
+      heading: "Geographical contexts",
+      values: countCharacteristicValues(
+        includedCharacteristics,
+        (item) => item.country
+      ),
+    },
+  ];
+
+  return groups.filter((group) => group.values.length > 0);
 };
 
 export default function FullReviewReport({
@@ -138,14 +155,24 @@ export default function FullReviewReport({
 }: FullReviewReportProps) {
   const [copied, setCopied] = useState(false);
   const configuredTitle = protocol.title?.trim();
-  const manuscriptTitle = synthesis.suggestedTitle?.trim()
+  const evidenceKey = includedRecords.map((record) => record.id).sort().join("|");
+  const evidenceGroundedTitle =
+    synthesis.titleCandidateEvidenceKey === evidenceKey
+      ? synthesis.suggestedTitle?.trim()
+      : "";
+  const manuscriptTitle = evidenceGroundedTitle
     || (configuredTitle && !/^untitled systematic review$/i.test(configuredTitle)
       ? configuredTitle
       : "Systematic Literature Review Manuscript");
-  const evidenceLandscape = getEvidenceLandscape(includedRecords);
-  const characteristicsLandscape = getCharacteristicsLandscape(includedRecords, characteristics);
+  const characteristicGroups = getCharacteristicGroups(includedRecords, characteristics);
+  const evidenceOverview = synthesis.subtopics
+    .map((subtopic) => ({
+      label: subtopic.title.replace(/^\d+(?:\.\d+)*\.?\s*/, ""),
+      count: new Set(subtopic.supportingRecordIds || []).size,
+    }))
+    .filter((item) => item.label && item.count > 0);
   const recordGroundedRationale = includedRecords.length > 0
-    ? `This review examines ${manuscriptTitle} through ${includedRecords.length} included records. The record-level evidence is concentrated in ${summarizeLandscape(evidenceLandscape.themeCounts) || "the themes reported in the included literature"}, covering the methods, technologies, and outcomes described by those records.`
+    ? `This review examines the scope represented by ${includedRecords.length} final included records. Interpretation is restricted to their titles, abstracts, and extracted study characteristics.`
     : protocol.introductionRationale || `This review examines evidence relevant to ${manuscriptTitle}.`;
 
   const questions = protocol.primaryResearchQuestions || [
@@ -205,7 +232,7 @@ export default function FullReviewReport({
       ? "Included"
       : screening[record.id]?.agreed === false
       ? "Excluded"
-      : "Excluded";
+      : "Not decided";
 
   // Structured Abstract generator
   const getAbstractContent = () => {
@@ -214,17 +241,15 @@ export default function FullReviewReport({
     const searchDbs = protocol.searchStrategies.map((s) => s.database).join(", ") || "major electronic bibliographic databases";
     const meth = `The review draws on records from ${searchDbs}. Screening decisions follow predefined eligibility criteria, and the included evidence is organized for narrative and thematic synthesis.`;
     
-    const res = `${includedRecords.length} records were retained for synthesis from ${counts.afterDedup || counts.screened || includedRecords.length} records after deduplication. Publication years were distributed as follows: ${summarizeLandscape(evidenceLandscape.yearCounts) || "no publication-year pattern was available"}. The descriptive evidence landscape was organized by study categories, contexts, methodological approaches, and reported outcome types.`;
-    const concl = `The included literature presents a narrative and thematic evidence base organized around the reported methods, technologies, and outcomes. Interpretation is anchored to the findings and publication characteristics of the included records.`;
+    const res = `${includedRecords.length} records were retained for synthesis from ${counts.afterDedup || counts.screened || includedRecords.length} records after deduplication. Results are reported only for characteristics and themes supported by the final included evidence.`;
+    const concl = `The review summarizes the principal patterns supported by the final included records without quantitative pooling or claims beyond the supplied evidence.`;
     const titleKeywords = getTitleKeywords(manuscriptTitle);
     const keywords = [
       ...titleKeywords,
       protocol.reviewType || "Systematic Literature Review",
       "Evidence Synthesis",
       "Narrative Synthesis",
-      "Publication Trends",
-      "Thematic Evidence Landscape",
-      ...evidenceLandscape.themeCounts.slice(0, 2).map((theme) => theme.label),
+      ...evidenceOverview.slice(0, 2).map((theme) => theme.label),
     ].filter(Boolean);
 
     return { bg, obj, meth, res, concl, keywords };

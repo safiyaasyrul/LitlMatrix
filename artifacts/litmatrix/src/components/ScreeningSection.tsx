@@ -9,7 +9,6 @@ import {
 import { callAI, parseJSONLoose } from "../utils/aiClient";
 import StudyCharacteristicsTable from "./StudyCharacteristicsTable";
 
-export const MAX_INCLUDED_RECORDS = 99;
 const STRICT_SCREENING_THRESHOLD = 85;
 
 interface ScreeningSectionProps {
@@ -37,8 +36,7 @@ export default function ScreeningSection({
 
   const includedRecords = screeningPool
     .filter((record) => screening[record.id]?.agreed === true)
-    .sort((a, b) => (screening[b.id]?.score || 0) - (screening[a.id]?.score || 0))
-    .slice(0, MAX_INCLUDED_RECORDS);
+    .sort((a, b) => (screening[b.id]?.score || 0) - (screening[a.id]?.score || 0));
   const includedIds = new Set(includedRecords.map((record) => record.id));
   const includedCount = includedRecords.length;
   const afterDedupCount = screeningPool.length;
@@ -53,27 +51,6 @@ export default function ScreeningSection({
     }
     return acc;
   }, {});
-
-  const enforceInclusionLimit = (
-    decisions: Record<string, ScreeningDecision>
-  ): Record<string, ScreeningDecision> => {
-    const rankedCandidates = screeningPool
-      .filter((record) => decisions[record.id]?.agreed === true)
-      .sort((a, b) => (decisions[b.id]?.score || 0) - (decisions[a.id]?.score || 0));
-
-    rankedCandidates.slice(MAX_INCLUDED_RECORDS).forEach((record) => {
-      const previous = decisions[record.id];
-      decisions[record.id] = {
-        ...previous,
-        decision: "exclude",
-        agreed: false,
-        exclusionReason: "Other",
-        reason: `The record met the minimum screening threshold but ranked outside the ${MAX_INCLUDED_RECORDS} strongest protocol matches. It was excluded from the bounded synthesis set; full-text eligibility was not assessed.`,
-      };
-    });
-
-    return decisions;
-  };
 
   const downloadPrismaSynthesisReport = () => {
     const report = [
@@ -201,7 +178,7 @@ Return ONLY a JSON array:
         });
 
         setProgress(Math.round(((b + 1) / totalBatches) * 100));
-        onUpdateScreening({ ...enforceInclusionLimit(nextScreening) });
+        onUpdateScreening({ ...nextScreening });
       }
     } finally {
       screeningRunRef.current = false;

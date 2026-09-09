@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { ClerkProvider, SignIn, SignUp, useAuth, useUser } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { Route, Switch, Redirect, Link, useLocation, Router as WouterRouter } from "wouter";
+import { ShieldCheck, X } from "lucide-react";
 import App from "./App.tsx";
 import "./index.css";
 
@@ -58,6 +59,7 @@ function AdminAccess() {
   const [requests, setRequests] = useState<any[]>([]);
   const [allowlist, setAllowlist] = useState<any[]>([]);
   const [email, setEmail] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
   const load = () => Promise.all([
     fetch("/api/prisma/admin/access", { credentials: "same-origin" }).then((r) => r.ok ? r.json() : []),
     fetch("/api/prisma/admin/allowlist", { credentials: "same-origin" }).then((r) => r.ok ? r.json() : []),
@@ -66,37 +68,58 @@ function AdminAccess() {
     setAllowlist(nextAllowlist);
   });
   useEffect(() => { void load(); }, []);
-  return <aside className="fixed right-4 top-16 z-50 max-h-[75vh] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
-    <h2 className="font-semibold text-slate-900">Allowed users</h2>
-    <p className="mb-3 text-xs text-slate-500">Add a paid customer’s sign-in email.</p>
-    <form className="flex gap-2" onSubmit={(event) => {
-      event.preventDefault();
-      fetch("/api/prisma/admin/allowlist", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      }).then((response) => {
-        if (!response.ok) throw new Error("Could not add email.");
-        setEmail("");
-        return load();
-      }).catch(() => undefined);
-    }}>
-      <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="customer@example.com" className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-      <button className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">Add</button>
-    </form>
-    <div className="mt-3 space-y-1">
-      {allowlist.map((entry) => <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2" key={entry.id}>
-        <span className="truncate text-sm">{entry.email}</span>
-        <button className="text-xs font-semibold text-rose-700" onClick={() => fetch(`/api/prisma/admin/allowlist/${entry.id}`, { method: "DELETE", credentials: "same-origin" }).then(load)}>Remove</button>
-      </div>)}
-    </div>
-    {requests.length > 0 && <h3 className="mb-1 mt-4 border-t border-slate-200 pt-3 text-sm font-semibold">Access requests</h3>}
-    {requests.map(({ request, user }) => <div className="flex items-center justify-between gap-3 border-t py-2" key={request.id}>
-      <span className="text-sm">{user.email} ({request.status})</span>
-      <button className="rounded border px-2 py-1 text-xs" onClick={() => fetch(`/api/prisma/admin/access/${request.id}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: request.status === "approved" ? "revoked" : "approved" }) }).then(load)}>{request.status === "approved" ? "Revoke" : "Approve"}</button>
-    </div>)}
-  </aside>;
+  return <>
+    <button
+      type="button"
+      aria-label={isOpen ? "Close allowed user access" : "Open allowed user access"}
+      title={isOpen ? "Close allowed user access" : "Allowed user access"}
+      aria-expanded={isOpen}
+      onClick={() => setIsOpen((open) => !open)}
+      className="fixed right-4 top-16 z-[60] flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-lg transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+    >
+      {isOpen ? <X className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}
+    </button>
+    {isOpen && (
+      <aside className="fixed right-4 top-28 z-50 max-h-[calc(75vh-3rem)] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold text-slate-900">Allowed users</h2>
+            <p className="text-xs text-slate-500">Add a paid customer’s sign-in email.</p>
+          </div>
+          <span className="rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
+            Owner
+          </span>
+        </div>
+        <form className="flex gap-2" onSubmit={(event) => {
+          event.preventDefault();
+          fetch("/api/prisma/admin/allowlist", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email }),
+          }).then((response) => {
+            if (!response.ok) throw new Error("Could not add email.");
+            setEmail("");
+            return load();
+          }).catch(() => undefined);
+        }}>
+          <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="customer@example.com" className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <button className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">Add</button>
+        </form>
+        <div className="mt-3 space-y-1">
+          {allowlist.map((entry) => <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2" key={entry.id}>
+            <span className="truncate text-sm">{entry.email}</span>
+            <button className="text-xs font-semibold text-rose-700" onClick={() => fetch(`/api/prisma/admin/allowlist/${entry.id}`, { method: "DELETE", credentials: "same-origin" }).then(load)}>Remove</button>
+          </div>)}
+        </div>
+        {requests.length > 0 && <h3 className="mb-1 mt-4 border-t border-slate-200 pt-3 text-sm font-semibold">Access requests</h3>}
+        {requests.map(({ request, user }) => <div className="flex items-center justify-between gap-3 border-t py-2" key={request.id}>
+          <span className="text-sm">{user.email} ({request.status})</span>
+          <button className="rounded border px-2 py-1 text-xs" onClick={() => fetch(`/api/prisma/admin/access/${request.id}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: request.status === "approved" ? "revoked" : "approved" }) }).then(load)}>{request.status === "approved" ? "Revoke" : "Approve"}</button>
+        </div>)}
+      </aside>
+    )}
+  </>;
 }
 
 function PublicLanding() {

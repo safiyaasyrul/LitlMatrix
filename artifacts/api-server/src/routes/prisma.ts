@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { clerkClient, getAuth } from "@clerk/express";
-import { eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   accessRequests,
@@ -12,7 +12,11 @@ import {
 
 const router = Router();
 const ownerEmail = process.env.PRISMA_OWNER_EMAIL?.trim().toLowerCase();
-const limit = 25;
+const perUserLimit = 25;
+const configuredGlobalCapacity = Number(process.env.PRISMA_MANAGED_AI_DAILY_CAPACITY ?? 1000);
+const globalDailyCapacity = Number.isFinite(configuredGlobalCapacity) && configuredGlobalCapacity > 0
+  ? Math.floor(configuredGlobalCapacity)
+  : 1000;
 
 async function identity(req: any) {
   const { userId } = getAuth(req);
@@ -60,7 +64,7 @@ router.get("/me", async (req, res, next) => {
       user: result.user,
       status: result.allowed ? "approved" : result.access?.status ?? "pending",
       owner: result.owner,
-      dailyLimit: limit,
+      dailyLimit: perUserLimit,
     });
   } catch (error) { return next(error); }
 });
@@ -108,7 +112,7 @@ router.post("/ai/generate", async (req, res, next) => {
     const today = new Date().toISOString().slice(0, 10);
     const [usage] = await db.insert(dailyAiUsage).values({ userId, usageDate: today, calls: 1 })
       .onConflictDoUpdate({ target: [dailyAiUsage.userId, dailyAiUsage.usageDate], set: { calls: sql`${dailyAiUsage.calls} + 1` } }).returning();
-    if (usage.calls > limit) return res.status(429).json({ error: "Daily managed-AI limit reached.", limit, remaining: 0 });
+    if (usage.calls > perUserLimit) return res.status(429).json({ error: "Daily managed-AI limit reached.", limit: perUserLimit, remaining: 0 });
     const baseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
     const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
     if (!baseUrl || !apiKey) return res.status(503).json({ error: "Managed AI is not configured on the server." });
@@ -121,7 +125,7 @@ router.post("/ai/generate", async (req, res, next) => {
     });
     const data: any = await response.json().catch(() => ({}));
     if (!response.ok || data.error) return res.status(response.status || 502).json({ error: data.error?.message ?? "Managed AI request failed." });
-    return res.json({ text: data.choices?.[0]?.message?.content ?? "", usage: { limit, used: usage.calls, remaining: limit - usage.calls } });
+    return res.json({ text: data.choices?.[0]?.message?.content ?? "", usage: { limit: perUserLimit, used: usage.calls, remaining: perUserLimit - usage.calls } });
   } catch (error) { return next(error); }
 });
 
@@ -129,6 +133,40 @@ router.get("/admin/access", async (_req, res, next) => {
   try {
     if (!res.locals.prismaIdentity.owner) return res.status(403).json({ error: "Owner access required." });
     return res.json(await db.select({ request: accessRequests, user: users }).from(accessRequests).innerJoin(users, eq(accessRequests.userId, users.id)));
+  } catch (error) { return next(error); }
+});
+router.get("/admin/ai-usage", async (_req, res, next) => {
+  try {
+    if (!res.locals.prismaIdentity.owner) return res.status(403).json({ error: "Owner access required." });
+    const today = new Date().toISOString().slice(0, 10);
+    const usageRows = await db.select({
+      userId: dailyAiUsage.userId,
+      email: users.email,
+      name: users.name,
+      calls: dailyAiUsage.calls,
+    }).from(dailyAiUsage)
+      .innerJoin(users, eq(dailyAiUsage.userId, users.id))
+      .where(eq(dailyAiUsage.usageDate, today))
+      .orderBy(desc(dailyAiUsage.calls));
+    const used = usageRows.reduce((total, row) => total + row.calls, 0);
+    const remaining = Math.max(0, globalDailyCapacity - used);
+    return res.json({
+      date: today,
+      capacity: globalDailyCapacity,
+      used,
+      remaining,
+      utilizationPercent: Math.min(100, Math.round((used / globalDailyCapacity) * 100)),
+      activeUsers: usageRows.length,
+      perUserLimit,
+      exhaustedUsers: usageRows.filter((row) => row.calls >= perUserLimit).length,
+      users: usageRows.slice(0, 100).map((row) => ({
+        userId: row.userId,
+        email: row.email,
+        name: row.name,
+        used: row.calls,
+        remaining: Math.max(0, perUserLimit - row.calls),
+      })),
+    });
   } catch (error) { return next(error); }
 });
 router.get("/admin/allowlist", async (_req, res, next) => {

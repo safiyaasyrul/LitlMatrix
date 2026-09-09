@@ -15,6 +15,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { callAI, parseJSONLoose } from "../utils/aiClient";
+import { getIncludedEvidenceKey } from "../utils/evidenceKey";
 
 interface SynthesisSectionProps {
   protocol: SLRProtocol;
@@ -109,46 +110,6 @@ const buildStudiesFromRecords = (
         cleanText(characteristic?.category) || "Uncategorized evidence",
     };
   });
-};
-
-/*
- * Generic term extraction is used only for conservative title suggestions.
- * It does not classify records and does not create predefined themes.
- */
-const getThemeTerms = (studies: SynthesisStudy[]) => {
-  const stopWords = new Set([
-    "about", "across", "after", "among", "also", "based", "been",
-    "being", "between", "both", "could", "does", "each", "from",
-    "have", "into", "more", "other", "reported", "record", "records",
-    "study", "studies", "their", "these", "those", "through", "using",
-    "were", "which", "with", "within", "without", "not", "supplied",
-    "information", "described", "details", "available", "included",
-    "include", "analysis", "method", "methods", "model", "models",
-    "result", "results", "finding", "findings", "research", "approach",
-    "approaches", "reported",
-  ]);
-
-  const counts = new Map<string, number>();
-
-  studies.forEach((study) => {
-    const text = [
-      study.interventionOrFocus,
-      study.primaryOutcome,
-      study.keyFinding,
-      study.category,
-    ].join(" ").toLowerCase();
-
-    text.match(/[a-z][a-z0-9-]{3,}/g)?.forEach((word) => {
-      const normalized = word.replace(/^-+|-+$/g, "");
-      if (!normalized || stopWords.has(normalized)) return;
-      counts.set(normalized, (counts.get(normalized) || 0) + 1);
-    });
-  });
-
-  return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, 8)
-    .map(([word]) => word);
 };
 
 const titleStopWords = new Set([
@@ -274,9 +235,6 @@ const completeTitleCandidates = (
   fallbackTitles: string[]
 ) => Array.from(new Set([...candidates, ...fallbackTitles])).slice(0, 5);
 
-const getTitleEvidenceKey = (records: SLRRecord[]) =>
-  records.map((record) => record.id).sort().join("|");
-
 const limitWords = (value: string, maximum: number) => {
   const words = cleanText(value).split(/\s+/).filter(Boolean);
   if (words.length <= maximum) return words.join(" ");
@@ -291,10 +249,7 @@ const limitWords = (value: string, maximum: number) => {
 const buildFallbackNarrative = (studies: SynthesisStudy[]) => {
   if (studies.length === 0) return "";
 
-  const terms = getThemeTerms(studies).slice(0, 5);
-  const opening = terms.length > 0
-    ? `Across the included literature, recurring areas of investigation include ${terms.join(", ")}.`
-    : "Across the included literature, the supplied records describe a range of research approaches, contexts, and reported findings.";
+  const opening = "Across the included literature, the supplied records describe the reported research approaches, contexts, and findings.";
 
   const usable = studies.filter(
     (study) => cleanText(study.keyFinding) && cleanText(study.keyFinding) !== RECORD_NOT_REPORTED
@@ -316,12 +271,11 @@ const buildFallbackNarrative = (studies: SynthesisStudy[]) => {
 const buildFallbackSubtopics = (studies: SynthesisStudy[]) => {
   if (studies.length === 0) return [];
 
-  const terms = getThemeTerms(studies).slice(0, 3);
-  const title = terms.length >= 2
-    ? `Emerging evidence around ${terms.map((term) => term.charAt(0).toUpperCase() + term.slice(1)).join(", ")}`
-    : "Emerging Patterns in the Included Evidence";
-
-  return [{ title, prose: buildFallbackNarrative(studies) }];
+  return [{
+    title: "Included Evidence",
+    prose: limitWords(buildFallbackNarrative(studies), 180),
+    supportingRecordIds: studies.map((study) => study.recordId),
+  }];
 };
 
 /*
@@ -342,10 +296,10 @@ const sanitizeSubtopics = (
         .split(/\s+/)
         .slice(0, 6)
         .join(" "),
-      prose: limitWords(item?.prose, 250),
+      prose: limitWords(item?.prose, 180),
       supportingRecordIds: Array.isArray(item?.supportingRecordIds)
         ? Array.from(
-            new Set(
+            new Set<string>(
               item.supportingRecordIds
                 .map((recordId: unknown) => cleanText(recordId))
                 .filter((recordId: string) => validRecordIds.has(recordId))
@@ -543,8 +497,8 @@ export default function SynthesisSection({
     [includedRecords]
   );
   const titleEvidenceKey = useMemo(
-    () => getTitleEvidenceKey(includedRecords),
-    [includedRecords]
+    () => getIncludedEvidenceKey(includedRecords, characteristics),
+    [includedRecords, characteristics]
   );
   const titleOptions =
     synthesis.titleCandidateEvidenceKey === titleEvidenceKey &&

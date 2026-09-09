@@ -690,7 +690,7 @@ export default function App() {
                   PRISMA 2020 Flow Diagram
                 </h2>
                 <p className="text-xs text-slate-500 mt-1">
-                  Flow of records through identification, screening, eligibility, and inclusion. Untracked full-text stages are shown as “Not recorded,” not as zero.
+                  Flow of records through identification, title-and-abstract screening, and inclusion using the recorded decisions.
                 </p>
               </div>
               <PrismaDiagram counts={prismaCounts} />

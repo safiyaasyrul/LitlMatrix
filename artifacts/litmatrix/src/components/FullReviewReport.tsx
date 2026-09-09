@@ -7,11 +7,16 @@ import {
   SynthesisResult,
   DiscussionSections,
   PrismaChecklistItem,
+  CitationStyle,
 } from "../types/slr";
 import { Download, Copy, Printer, Check, BookOpen, FileText, CheckCircle2, ShieldAlert, Sparkles, Layers, SlidersHorizontal, Quote } from "lucide-react";
 import PrismaDiagram from "./PrismaDiagram";
 import { getIncludedEvidenceKey } from "../utils/evidenceKey";
 import { buildManuscriptAbstract } from "../utils/manuscriptAbstract";
+import { formatCitationText, formatReference } from "../utils/citationFormatter";
+import { CITATION_STYLE_OPTIONS } from "../utils/citationFormatter";
+import { buildPrismaSvg, svgToDataUri } from "../utils/prismaSvg";
+import { buildDocxBlob, DocxBlock } from "../utils/docxExporter";
 
 interface FullReviewReportProps {
   protocol: SLRProtocol;
@@ -23,6 +28,8 @@ interface FullReviewReportProps {
   discussion: DiscussionSections;
   checklist: PrismaChecklistItem[];
   counts: any;
+  citationStyle: CitationStyle;
+  onCitationStyleChange: (style: CitationStyle) => void;
 }
 
 interface LandscapeCount {
@@ -132,6 +139,8 @@ export default function FullReviewReport({
   discussion,
   checklist,
   counts,
+  citationStyle,
+  onCitationStyleChange,
 }: FullReviewReportProps) {
   const [copied, setCopied] = useState(false);
   const configuredTitle = protocol.title?.trim();
@@ -222,6 +231,12 @@ export default function FullReviewReport({
     synthesis,
   });
   const abstractReady = !abstract.validationErrors?.length;
+  const formatProse = (value: string) =>
+    formatCitationText(value, includedRecords, citationStyle);
+  const referenceList = includedRecords.map((record, index) =>
+    formatReference(record, citationStyle, index + 1)
+  );
+  const prismaSvg = buildPrismaSvg(counts);
 
   const markdownCountTable = (heading: string, values: LandscapeCount[]) => {
     let table = `#### ${heading}\n\n| Description | Records |\n| --- | ---: |\n`;
@@ -270,7 +285,7 @@ export default function FullReviewReport({
     md += `Eligibility was assessed against the predefined protocol criteria reproduced verbatim in Appendix A.\n\n`;
 
     md += `### 2.4 Study Selection\n`;
-    md += `Records were screened against predefined eligibility criteria using the available bibliographic information. Recorded decisions and justifications are reported in the screening audit.\n\n`;
+    md += `Records entered the screening ledger were screened against predefined eligibility criteria using the available bibliographic information. Records without a final include or exclude decision remain unresolved; full-text retrieval and eligibility assessment were not performed. Recorded decisions and justifications are reported in the screening audit.\n\n`;
 
     md += `### 2.5 Data Extraction and Study Characteristics\n`;
     md += `Study characteristics were reported only when values had been extracted for final included records. Missing characteristics were omitted rather than inferred from citation metadata.\n\n`;
@@ -280,14 +295,23 @@ export default function FullReviewReport({
 
     md += `## 3. Results\n\n`;
     md += `### 3.1 Study Selection and Flow of Evidence\n`;
-    md += `${counts.uploaded || counts.identifiedDb || 0} records were uploaded, including ${counts.duplicatesRemoved || 0} duplicates recorded as removed. After deduplication, ${counts.afterDedup || counts.screened || 0} records remained, with ${includedRecords.length} included and ${(counts.afterDedup || counts.screened || 0) - includedRecords.length} excluded. The results describe the records retained by the configured screening criteria.\n\n`;
+    md += `${counts.uploaded || counts.identifiedDb || 0} records were identified, including ${counts.duplicatesRemoved || 0} duplicates recorded as removed. After deduplication, ${counts.afterDedup || 0} records entered the screening ledger, with ${includedRecords.length} included, ${counts.screenedExcluded || 0} excluded, and ${counts.unresolved || 0} unresolved. Full-text retrieval and eligibility assessment were not performed.\n\n`;
+    md += `**Figure 1. Adapted PRISMA 2020 flow diagram**\n\n`;
+    md += "```text\n";
+    md += `Identification: records identified (n = ${counts.uploaded || 0}) → duplicates removed (n = ${counts.duplicatesRemoved || 0})\n`;
+    md += `Screening: records screened (n = ${counts.screened || 0}) → excluded (n = ${counts.screenedExcluded || 0})\n`;
+    md += `                                                     ↘ unresolved (n = ${counts.unresolved || 0})\n`;
+    md += `                                                     ↘ included (n = ${counts.included || 0})\n`;
+    md += "```\n\n";
 
     md += `### 3.1 Screening Decision Audit Table (Table 1)\n\n`;
     md += `| Article Information (Title, Author & Journal) | Screening Status | Academic Screening Justification |\n`;
     md += `| --- | --- | --- |\n`;
     screenedRecords.forEach((record) => {
       const justification = screening[record.id]?.reason || "No screening justification was supplied for this record.";
-      md += `| ${getArticleRecord(record).replace(/\|/g, "/")} | ${getScreeningStatus(record)} | ${justification.replace(/\|/g, "/")} |\n`;
+      const referenceIndex = includedRecords.findIndex((item) => item.id === record.id);
+      const tableCitation = formatReference(record, citationStyle, referenceIndex >= 0 ? referenceIndex + 1 : undefined);
+      md += `| ${tableCitation.replace(/\|/g, "/")} | ${getScreeningStatus(record)} | ${formatProse(justification).replace(/\|/g, "/")} |\n`;
     });
     md += `\n`;
 
@@ -310,16 +334,16 @@ export default function FullReviewReport({
       md += `The synthesis focuses on the principal recurring patterns supported by the final included records. Themes are presented concisely and preserve differences in methods, contexts, and reported outcomes.\n\n`;
     }
     synthesis.subtopics.forEach((sub) => {
-      md += `#### ${sub.title.replace(/^\d+(?:\.\d+)*\.?\s*/, "")}\n${sub.prose}\n\n`;
+      md += `#### ${sub.title.replace(/^\d+(?:\.\d+)*\.?\s*/, "")}\n${formatProse(sub.prose)}\n\n`;
     });
 
     md += `## 4. Discussion\n\n`;
-    md += `### 4.1 Principal Findings\n${discussion.item23aGeneralInterpretation}\n\n`;
-    md += `### 4.2 Interpretation of the Evidence\n${discussion.item23bLimitationsOfEvidence}\n\n`;
-    md += `### 4.3 Implications\n${discussion.item23dImplications}\n\n`;
-    md += `### 4.5 Limitations of the Review\n${discussion.item23cLimitationsOfReviewProcess}\n\n`;
+    md += `### 4.1 Principal Findings\n${formatProse(discussion.item23aGeneralInterpretation)}\n\n`;
+    md += `### 4.2 Interpretation of the Evidence\n${formatProse(discussion.item23bLimitationsOfEvidence)}\n\n`;
+    md += `### 4.3 Implications\n${formatProse(discussion.item23dImplications)}\n\n`;
+    md += `### 4.5 Limitations of the Review\n${formatProse(discussion.item23cLimitationsOfReviewProcess)}\n\n`;
 
-    md += `## 5. Conclusions\n\n${discussion.item23dImplications}\n\n`;
+    md += `## 5. Conclusions\n\n${formatProse(discussion.item23dImplications)}\n\n`;
 
     if (protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) {
       md += `## Appendix A. Eligibility Criteria\n\n`;
@@ -354,9 +378,8 @@ export default function FullReviewReport({
     }
 
     md += `## References\n\n`;
-    includedRecords.forEach((r) => {
-      const auth = (r.authors || []).join(", ") || "Unknown authors";
-      md += `${auth} (${r.year || "n.d."}). ${r.title}. *${r.source || "Journal"}*${r.doi ? `, https://doi.org/${r.doi}` : ""}.\n\n`;
+    referenceList.forEach((reference) => {
+      md += `${reference}\n\n`;
     });
 
     return md;
@@ -384,6 +407,90 @@ export default function FullReviewReport({
     a.href = URL.createObjectURL(blob);
     a.download = "Systematic_Literature_Review_Manuscript.md";
     a.click();
+  };
+
+  const handleDownloadDocx = async () => {
+    const diagramPng = await new Promise<string>((resolve) => {
+      const image = new Image();
+      const url = URL.createObjectURL(new Blob([prismaSvg], { type: "image/svg+xml;charset=utf-8" }));
+      image.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 2400;
+        canvas.height = 1520;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          URL.revokeObjectURL(url);
+          resolve("");
+          return;
+        }
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve("");
+      };
+      image.src = url;
+    });
+
+    const blocks: DocxBlock[] = [
+      { kind: "title", text: manuscriptTitle },
+      { kind: "paragraph", text: `Review methodology: ${protocol.reviewType}. Citation style: ${citationStyle}.` },
+      { kind: "heading", level: 1, text: "Abstract" },
+      { kind: "paragraph", text: abstract.text },
+      { kind: "paragraph", text: `Keywords: ${abstract.keywords.join(", ")}` },
+      { kind: "heading", level: 1, text: "1. Introduction and Academic Rationale" },
+      { kind: "paragraph", text: recordGroundedRationale },
+      { kind: "heading", level: 1, text: "2. Methods" },
+      { kind: "heading", level: 2, text: "2.1 Review Design" },
+      { kind: "paragraph", text: getFrameworkNarrative() },
+      { kind: "heading", level: 2, text: "2.2 Study Selection and Synthesis" },
+      { kind: "paragraph", text: "Records entered the screening ledger were screened using the available bibliographic information. Unresolved records have no final include or exclude decision. Full-text retrieval and eligibility assessment were not performed. The included evidence was synthesized narratively without quantitative pooling." },
+      { kind: "heading", level: 1, text: "3. Results" },
+      { kind: "heading", level: 2, text: "3.1 Study Selection and Flow of Records" },
+      { kind: "paragraph", text: `${counts.uploaded || 0} records were identified; ${counts.duplicatesRemoved || 0} duplicates were removed. After deduplication, ${counts.screened || 0} records were screened, ${counts.screenedExcluded || 0} were excluded, ${counts.unresolved || 0} remained unresolved, and ${counts.included || 0} were included.` },
+      { kind: "caption", text: "Figure 1. Adapted PRISMA 2020 flow diagram." },
+      ...(diagramPng ? [{ kind: "image" as const, dataUri: diagramPng }] : []),
+      { kind: "heading", level: 2, text: "3.2 Screening Decision Audit" },
+      {
+        kind: "table",
+        rows: [
+          ["Article citation", "Status", "Screening justification"],
+          ...screenedRecords.map((record) => [
+            formatReference(record, citationStyle, includedRecords.some((item) => item.id === record.id) ? includedRecords.findIndex((item) => item.id === record.id) + 1 : undefined),
+            getScreeningStatus(record),
+            formatProse(screening[record.id]?.reason || "No screening justification was supplied for this record."),
+          ]),
+        ],
+      },
+      { kind: "heading", level: 2, text: "3.3 Narrative and Thematic Synthesis" },
+      ...synthesis.subtopics.flatMap((subtopic) => [
+        { kind: "heading" as const, level: 3 as const, text: subtopic.title.replace(/^\d+(?:\.\d+)*\.?\s*/, "") },
+        { kind: "paragraph" as const, text: formatProse(subtopic.prose) },
+      ]),
+      { kind: "heading", level: 1, text: "4. Discussion" },
+      { kind: "heading", level: 2, text: "4.1 Principal Findings" },
+      { kind: "paragraph", text: formatProse(discussion.item23aGeneralInterpretation) },
+      { kind: "heading", level: 2, text: "4.2 Interpretation of the Evidence" },
+      { kind: "paragraph", text: formatProse(discussion.item23bLimitationsOfEvidence) },
+      { kind: "heading", level: 2, text: "4.3 Implications" },
+      { kind: "paragraph", text: formatProse(discussion.item23dImplications) },
+      { kind: "heading", level: 2, text: "4.4 Limitations of the Review" },
+      { kind: "paragraph", text: formatProse(discussion.item23cLimitationsOfReviewProcess) },
+      { kind: "heading", level: 1, text: "5. Conclusions" },
+      { kind: "paragraph", text: formatProse(discussion.item23dImplications) },
+      { kind: "heading", level: 1, text: "References" },
+      ...referenceList.map((reference) => ({ kind: "paragraph" as const, text: reference })),
+    ];
+
+    const blob = buildDocxBlob(blocks);
+    const anchor = document.createElement("a");
+    anchor.href = URL.createObjectURL(blob);
+    anchor.download = `${manuscriptTitle.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 45)}.docx`;
+    anchor.click();
   };
 
   const handleDownloadDoc = () => {
@@ -454,7 +561,7 @@ export default function FullReviewReport({
   <p>Eligibility was assessed against the predefined protocol criteria reproduced verbatim in Appendix A.</p>
 
   <h3>2.4 Study Selection</h3>
-  <p>Records were screened against predefined eligibility criteria using the available bibliographic information. Recorded decisions and justifications are reported in the screening audit.</p>
+   <p>Records entered the screening ledger were screened against predefined eligibility criteria using the available bibliographic information. Records without a final include or exclude decision remain unresolved; full-text retrieval and eligibility assessment were not performed. Recorded decisions and justifications are reported in the screening audit.</p>
 
   <h3>2.5 Data Extraction and Study Characteristics</h3>
   <p>Study characteristics were reported only when values had been extracted for final included records. Missing characteristics were omitted rather than inferred from citation metadata.</p>
@@ -465,7 +572,7 @@ export default function FullReviewReport({
   <h2>3. Results</h2>
 
   <h3>3.1 Study Selection and Flow of Evidence</h3>
-  <p>${counts.uploaded || counts.identifiedDb || 0} records were uploaded, including ${counts.duplicatesRemoved || 0} duplicates recorded as removed. After deduplication, ${counts.afterDedup || counts.screened || 0} records remained, with ${includedRecords.length} included and ${(counts.afterDedup || counts.screened || 0) - includedRecords.length} excluded. The results describe the records retained by the configured screening criteria.</p>
+   <p>${counts.uploaded || counts.identifiedDb || 0} records were identified, including ${counts.duplicatesRemoved || 0} duplicates recorded as removed. After deduplication, ${counts.afterDedup || 0} records entered the screening ledger, with ${includedRecords.length} included, ${counts.screenedExcluded || 0} excluded, and ${counts.unresolved || 0} unresolved. Full-text retrieval and eligibility assessment were not performed.</p>
 
   <h3>3.1 Screening Decision Audit Table (Table 1)</h3>
   <div class="table-caption">Table 1: Article information, screening status, and academic screening justification</div>
@@ -481,9 +588,9 @@ export default function FullReviewReport({
       ${screenedRecords.map((record) => {
         return `
         <tr>
-          <td><strong>${getArticleRecord(record)}</strong></td>
+          <td><strong>${formatReference(record, citationStyle, includedRecords.some((item) => item.id === record.id) ? includedRecords.findIndex((item) => item.id === record.id) + 1 : undefined)}</strong></td>
           <td>${getScreeningStatus(record)}</td>
-          <td>${screening[record.id]?.reason || "No screening justification was supplied for this record."}</td>
+          <td>${formatProse(screening[record.id]?.reason || "No screening justification was supplied for this record.")}</td>
         </tr>
       `;
       }).join("")}
@@ -504,24 +611,27 @@ export default function FullReviewReport({
   ${synthesis.subtopics.length > 0 ? "<p>The synthesis focuses on the principal recurring patterns supported by the final included records. Themes are presented concisely and preserve differences in methods, contexts, and reported outcomes.</p>" : ""}
   ${synthesis.subtopics.map((st) => `
     <h4>${st.title.replace(/^\d+(?:\.\d+)*\.?\s*/, "")}</h4>
-    <p>${st.prose}</p>
+    <p>${formatProse(st.prose)}</p>
   `).join("")}
 
   <h2>4. Discussion</h2>
   <h3>4.1 Principal Findings</h3>
-  <p>${discussion.item23aGeneralInterpretation}</p>
+    <p>${formatProse(discussion.item23aGeneralInterpretation)}</p>
 
   <h3>4.2 Interpretation of the Evidence</h3>
-  <p>${discussion.item23bLimitationsOfEvidence}</p>
+    <p>${formatProse(discussion.item23bLimitationsOfEvidence)}</p>
 
   <h3>4.3 Implications</h3>
-  <p>${discussion.item23dImplications}</p>
+    <p>${formatProse(discussion.item23dImplications)}</p>
 
   <h3>4.5 Limitations of the Review</h3>
-  <p>${discussion.item23cLimitationsOfReviewProcess}</p>
+    <p>${formatProse(discussion.item23cLimitationsOfReviewProcess)}</p>
 
   <h2>5. Conclusions</h2>
-  <p>${discussion.item23dImplications}</p>
+  <p>${formatProse(discussion.item23dImplications)}</p>
+
+  <h2>Figure 1. Adapted PRISMA 2020 flow diagram</h2>
+  <p><img src="${svgToDataUri(prismaSvg)}" alt="Adapted PRISMA 2020 flow diagram" style="width:100%; max-width:900px;"/></p>
 
   ${(protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) ? `
     <h2>Appendix A. Eligibility Criteria</h2>
@@ -544,10 +654,7 @@ export default function FullReviewReport({
   ` : ""}
 
   <h2>References</h2>
-  ${includedRecords.map((r) => {
-    const auth = (r.authors || []).join(", ") || "Unknown authors";
-    return `<p>${auth} (${r.year || "n.d."}). <em>${r.title}</em>. ${r.source || "Journal"}${r.doi ? `, doi:${r.doi}` : ""}.</p>`;
-  }).join("")}
+  ${referenceList.map((reference) => `<p>${reference}</p>`).join("")}
 
 </body>
 </html>`;
@@ -576,6 +683,19 @@ export default function FullReviewReport({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <label className="flex items-center gap-2 text-xs font-mono text-slate-600">
+            <span className="whitespace-nowrap">Citation style</span>
+            <select
+              value={citationStyle}
+              onChange={(event) => onCitationStyleChange(event.target.value as CitationStyle)}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              aria-label="Manuscript citation style"
+            >
+              {CITATION_STYLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
           <button
             onClick={handleCopy}
             disabled={!abstractReady}
@@ -595,13 +715,13 @@ export default function FullReviewReport({
             Download Markdown (.md)
           </button>
           <button
-            onClick={handleDownloadDoc}
+            onClick={handleDownloadDocx}
             disabled={!abstractReady}
             title={!abstractReady ? abstract.validationErrors?.join(" ") : undefined}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-semibold text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <FileText className="w-3.5 h-3.5 text-indigo-600" />
-            Download Word (.doc)
+            Download Word (.docx)
           </button>
           <button
             onClick={() => window.print()}
@@ -714,7 +834,7 @@ export default function FullReviewReport({
 
             <h3 className="font-bold text-slate-900 text-sm font-mono">2.4 Study Selection</h3>
             <p className="text-justify">
-              Records were screened against predefined eligibility criteria using the available bibliographic information. Recorded decisions and justifications are reported in the screening audit.
+              Records entered the screening ledger were screened against predefined eligibility criteria using the available bibliographic information. Records without a final include or exclude decision remain unresolved; full-text retrieval and eligibility assessment were not performed.
             </p>
 
             <h3 className="font-bold text-slate-900 text-sm font-mono">2.5 Data Extraction and Study Characteristics</h3>
@@ -738,11 +858,12 @@ export default function FullReviewReport({
           <div className="space-y-3">
             <h3 className="font-bold text-slate-900 text-sm font-mono">3.1 Study Selection and Flow of Records</h3>
             <p className="text-xs sm:text-sm text-slate-700 leading-relaxed text-justify">
-              Uploaded records: {counts.uploaded || counts.identifiedDb || 0}. After deduplication: {counts.afterDedup || counts.screened || 0}. Included: {includedRecords.length}. Excluded: {(counts.afterDedup || counts.screened || 0) - includedRecords.length}. The results describe the records retained by the configured screening criteria.
+              Records identified: {counts.uploaded || counts.identifiedDb || 0}. After deduplication: {counts.afterDedup || 0}. Included: {includedRecords.length}. Excluded: {counts.screenedExcluded || 0}. Unresolved: {counts.unresolved || 0}. Full-text retrieval and eligibility assessment were not performed.
             </p>
 
             <div className="pt-2">
-              <PrismaDiagram counts={counts} />
+              <PrismaDiagram counts={counts} showActions={false} />
+              <p className="text-[10px] text-slate-500 font-mono mt-2">Figure 1. Adapted PRISMA 2020 flow diagram. Counts are derived from the screening ledger; unresolved records have no final include or exclude decision.</p>
             </div>
           </div>
 
@@ -795,11 +916,11 @@ export default function FullReviewReport({
                     return (
                       <tr key={record.id} className="hover:bg-slate-50/50">
                         <td className="p-2.5 text-slate-900">
-                          <div className="font-semibold">{getArticleRecord(record)}</div>
+                          <div className="font-semibold">{formatReference(record, citationStyle, includedRecords.some((item) => item.id === record.id) ? includedRecords.findIndex((item) => item.id === record.id) + 1 : undefined)}</div>
                         </td>
                         <td className="p-2.5 whitespace-nowrap">{getScreeningStatus(record)}</td>
                         <td className="p-2.5 text-slate-700">
-                          {screening[record.id]?.reason || "No screening justification was supplied for this record."}
+                          {formatProse(screening[record.id]?.reason || "No screening justification was supplied for this record.")}
                         </td>
                       </tr>
                     );
@@ -840,7 +961,7 @@ export default function FullReviewReport({
             {synthesis.subtopics.map((st, i) => (
               <div key={i} className="space-y-1">
                 <h4 className="font-bold text-xs text-slate-900 font-mono">{st.title.replace(/^\d+(?:\.\d+)*\.?\s*/, "")}</h4>
-                <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-sans text-justify">{st.prose}</p>
+                <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-sans text-justify">{formatProse(st.prose)}</p>
               </div>
             ))}
           </div>
@@ -855,26 +976,26 @@ export default function FullReviewReport({
           <div className="space-y-3 text-xs sm:text-sm text-slate-700 leading-relaxed">
             <div>
               <h3 className="font-bold text-slate-900 text-xs font-mono mb-1">4.1 Principal Findings</h3>
-              <p className="text-justify">{discussion.item23aGeneralInterpretation}</p>
+              <p className="text-justify">{formatProse(discussion.item23aGeneralInterpretation)}</p>
             </div>
             <div>
               <h3 className="font-bold text-slate-900 text-xs font-mono mb-1">4.2 Interpretation of the Evidence</h3>
-              <p className="text-justify">{discussion.item23bLimitationsOfEvidence}</p>
+              <p className="text-justify">{formatProse(discussion.item23bLimitationsOfEvidence)}</p>
             </div>
             <div>
               <h3 className="font-bold text-slate-900 text-xs font-mono mb-1">4.3 Implications</h3>
-              <p className="text-justify">{discussion.item23dImplications}</p>
+              <p className="text-justify">{formatProse(discussion.item23dImplications)}</p>
             </div>
             <div>
               <h3 className="font-bold text-slate-900 text-xs font-mono mb-1">4.5 Limitations of the Review</h3>
-              <p className="text-justify">{discussion.item23cLimitationsOfReviewProcess}</p>
+              <p className="text-justify">{formatProse(discussion.item23cLimitationsOfReviewProcess)}</p>
             </div>
           </div>
         </section>
 
         <section className="space-y-3">
           <h2 className="text-xl font-bold text-slate-900 border-b border-slate-100 pb-2">5. Conclusions</h2>
-          <p className="text-xs sm:text-sm text-slate-700 leading-relaxed text-justify">{discussion.item23dImplications}</p>
+          <p className="text-xs sm:text-sm text-slate-700 leading-relaxed text-justify">{formatProse(discussion.item23dImplications)}</p>
         </section>
 
         {(protocol.eligibilityCriteria.inclusion.length > 0 || protocol.eligibilityCriteria.exclusion.length > 0) && (
@@ -905,9 +1026,9 @@ export default function FullReviewReport({
             References
           </h2>
           <div className="space-y-2 text-xs text-slate-600 font-sans leading-relaxed">
-            {includedRecords.map((r, i) => (
-              <p key={i} className="text-justify">
-                <span className="font-semibold text-slate-800">{(r.authors || []).join(", ") || "Unknown authors"}</span> ({r.year || "n.d."}). {r.title}. <em>{r.source || "Journal"}</em>{r.doi ? `, doi:${r.doi}` : ""}.
+            {referenceList.map((reference, index) => (
+              <p key={index} className="text-justify">
+                {reference}
               </p>
             ))}
           </div>

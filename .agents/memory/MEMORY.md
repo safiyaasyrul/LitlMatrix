@@ -3,3 +3,4 @@
 - [Git merge checkpoints](git-merge-checkpoints.md) — Replit checkpoints can consume a resolved merge before its merge parent is recorded; verify commit parents, not just a clean tree.
 - [Narrative-first review workflow](narrative-first-review-workflow.md) — keep PRISMA, PICO/PICOC, screening, extraction, references, and narrative/thematic synthesis as defaults; optional quantitative or appraisal methods must not be forced.
 - [Paid access by email allowlist](paid-access-allowlist.md) — access is granted manually by verified email after off-platform payment; do not assume automatic billing entitlements.
+- [Citation and PRISMA export contract](citation-and-prisma-export.md) — keep style formatting and adapted flow counts shared across preview, print, Markdown, and Word exports.

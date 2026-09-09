@@ -11,6 +11,8 @@ export interface SLRRecord {
   studyType?: string;
 }
 
+export type CitationStyle = "apa7" | "ieee" | "vancouver" | "harvard";
+
 export interface ScreeningDecision {
   score: number | null; // 0 - 100
   reason: string;

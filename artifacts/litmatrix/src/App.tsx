@@ -9,6 +9,7 @@ import {
   PrismaChecklistItem,
   PrismaSChecklistItem,
   RosesChecklistItem,
+  CitationStyle,
 } from "./types/slr";
 import {
   initialPrismaChecklist,
@@ -34,6 +35,7 @@ import SynthesisSection from "./components/SynthesisSection";
 import DiscussionSection from "./components/DiscussionSection";
 import FullReviewReport from "./components/FullReviewReport";
 import ApiKeySection from "./components/ApiKeySection";
+import { DEFAULT_CITATION_STYLE } from "./utils/citationFormatter";
 
 const neutralDiscussionDefaults: Pick<
   DiscussionSections,
@@ -98,6 +100,10 @@ export default function App() {
   // Navigation State
   const [activeStage, setActiveStage] = useState<number>(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [citationStyle, setCitationStyle] = useState<CitationStyle>(() => {
+    const saved = localStorage.getItem("slr_citation_style_v1");
+    return saved === "ieee" || saved === "vancouver" || saved === "harvard" ? saved : DEFAULT_CITATION_STYLE;
+  });
 
   // Application data states. New workspaces start blank; demonstration content is opt-in.
   const [protocol, setProtocol] = useState<SLRProtocol>(() => {
@@ -280,6 +286,11 @@ export default function App() {
     localStorage.setItem("slr_ai_keys_v1", JSON.stringify(keysConfig));
   }, [keysConfig]);
 
+  useEffect(() => {
+    if (!hydrationReady.current) return;
+    localStorage.setItem("slr_citation_style_v1", citationStyle);
+  }, [citationStyle]);
+
   const activeAIConfig = useMemo(() => {
     return getActiveAIConfig(keysConfig);
   }, [keysConfig]);
@@ -292,6 +303,13 @@ export default function App() {
         const saved = result?.snapshot;
         if (saved) {
           setProtocol(saved.protocol ?? BLANK_PROTOCOL);
+          setCitationStyle(
+            saved.citationStyle === "ieee" ||
+              saved.citationStyle === "vancouver" ||
+              saved.citationStyle === "harvard"
+              ? saved.citationStyle
+              : DEFAULT_CITATION_STYLE
+          );
           setRecords(saved.records ?? []);
           setDupesRemoved(typeof saved.dupesRemoved === "number" ? saved.dupesRemoved : 0);
           setScreening(saved.screening ?? {});
@@ -328,12 +346,12 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ snapshot: {
           protocol, records, dupesRemoved, screening, characteristics, synthesis,
-          discussion, checklist, prismaSChecklist, rosesChecklist,
+          discussion, checklist, prismaSChecklist, rosesChecklist, citationStyle,
         } }),
       }).catch(() => undefined);
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [protocol, records, dupesRemoved, screening, characteristics, synthesis, discussion, checklist, prismaSChecklist, rosesChecklist]);
+  }, [protocol, records, dupesRemoved, screening, characteristics, synthesis, discussion, checklist, prismaSChecklist, rosesChecklist, citationStyle]);
 
   // Derived included records
   const includedRecords = useMemo(() => {
@@ -367,7 +385,8 @@ export default function App() {
     const uploadedCount = records.length + (dupesRemoved || 0);
     const afterDedupCount = records.length;
     const includedCount = includedRecords.length;
-    const excludedCount = Math.max(0, afterDedupCount - includedCount);
+    const excludedCount = records.filter((record) => screening[record.id]?.agreed === false).length;
+    const unresolvedCount = Math.max(0, afterDedupCount - includedCount - excludedCount);
     const databaseBreakdown = records.reduce<Record<string, number>>((breakdown, record) => {
       const sources: string[] = record.databaseSources?.length
         ? record.databaseSources
@@ -391,6 +410,7 @@ export default function App() {
       duplicatesRemoved: dupesRemoved || 0,
       screened: afterDedupCount,
       screenedExcluded: excludedCount,
+      unresolved: unresolvedCount,
       soughtRetrieval: 0,
       notRetrieved: 0,
       assessed: 0,
@@ -799,6 +819,8 @@ export default function App() {
               discussion={discussion}
               checklist={checklist}
               counts={prismaCounts}
+              citationStyle={citationStyle}
+              onCitationStyleChange={setCitationStyle}
             />
           )}
 

@@ -1,0 +1,405 @@
+FIX THE MANUSCRIPT ABSTRACT GENERATION
+
+The current abstract is malformed, overly protocol-like, and contains a long concatenated Objectives sentence with multiple research questions/objectives. Rewrite the abstract generation completely.
+
+IMPORTANT:
+Do not modify the actual evidence, screening decisions, included records, or study characteristics. This task is ONLY to fix how the manuscript abstract and keywords are generated and displayed.
+
+==================================================
+1. ABSTRACT FORMAT
+==================================================
+
+Generate ONE SINGLE CONTINUOUS PARAGRAPH.
+
+Do NOT display section labels such as:
+- Background
+- Objective
+- Methods
+- Results
+- Conclusion
+
+The abstract should read like a normal publication-ready systematic review abstract.
+
+Maximum length: 300 words.
+Preferred length: approximately 200–280 words.
+
+Do not mechanically truncate the abstract at 300 words. The final text MUST end at a complete sentence.
+
+==================================================
+2. ABSTRACT CONTENT
+==================================================
+
+Internally structure the abstract as:
+
+A. Background / context
+B. Objective
+C. Methods
+D. Results
+E. Conclusion
+
+But combine all five components naturally into ONE paragraph.
+
+--------------------------------------------------
+A. BACKGROUND
+--------------------------------------------------
+
+Briefly establish the research problem or topic based on the actual protocol and included evidence.
+
+Use only concepts supported by the actual review topic.
+
+Do not write a generic statement such as:
+
+"Research in this area has grown significantly..."
+
+unless the available evidence actually supports such a statement.
+
+Do not introduce concepts that are absent from the protocol or included studies.
+
+--------------------------------------------------
+B. OBJECTIVE
+--------------------------------------------------
+
+Write ONE concise overarching objective.
+
+Do NOT copy or concatenate RQ1, RQ2, RQ3, etc.
+
+Do NOT produce a sentence containing multiple objectives joined by:
+"and to..."
+"as well as..."
+"and to identify..."
+"and to assess..."
+
+For example, instead of generating:
+
+"This review aims to examine X, identify Y, evaluate Z, assess A, and determine B..."
+
+write a single focused objective such as:
+
+"This review synthesises the available evidence on [actual topic/focus] and identifies the principal patterns and research gaps reported in the literature."
+
+The exact wording must be generated from the actual protocol and included evidence.
+
+==================================================
+3. METHODS
+==================================================
+
+Describe ONLY methods that were actually performed.
+
+The Methods portion should briefly state:
+
+- systematic literature review approach;
+- actual databases/sources searched;
+- that records were screened against predefined eligibility criteria;
+- the final number of included records;
+- narrative/thematic synthesis where applicable.
+
+Use the actual database/source names stored in the application state.
+
+DO NOT invent:
+- full-text retrieval;
+- full-text assessment;
+- quality appraisal;
+- risk-of-bias assessment;
+- meta-analysis;
+- effect-size calculation;
+- GRADE;
+- statistical pooling;
+- human reviewer procedures;
+- inter-rater reliability.
+
+If these were not actually performed, they MUST NOT appear in the abstract.
+
+DO NOT mention:
+- AI screening;
+- AI-assisted screening;
+- Gemini;
+- OpenAI;
+- API calls;
+- automated screening;
+- software implementation.
+
+The manuscript should describe the review methodology neutrally.
+
+==================================================
+4. RESULTS — EVIDENCE LOCK
+==================================================
+
+This is critical.
+
+Results MUST be generated ONLY from the FINAL INCLUDED RECORDS.
+
+Use:
+
+includedRecords
+
+as the authoritative evidence set.
+
+Do not use:
+- all imported records;
+- initially retrieved records;
+- excluded records;
+- uncertain records;
+- discarded records;
+- records that were previously included but later excluded;
+- generic domain knowledge.
+
+The final included-record count MUST be dynamic:
+
+includedRecords.length
+
+Do not hard-code "12", "50", "99", or any other number.
+
+Example:
+
+"The search and screening process resulted in XX included records..."
+
+where XX is generated dynamically from includedRecords.length.
+
+Results should summarise only broad patterns actually supported by the included evidence.
+
+Where StudyCharacteristic data are available, use them.
+
+Do not fabricate:
+- sample sizes;
+- effect sizes;
+- percentages;
+- statistical significance;
+- confidence intervals;
+- performance metrics;
+- geographical distributions;
+- study-design distributions;
+- outcome frequencies.
+
+If a characteristic is missing, do not invent it.
+
+Do not use "Not reported" as a substantive finding in the abstract.
+
+Do not turn the Results section into an annotated bibliography.
+
+NEVER write:
+
+"Study A found..."
+"Study B reported..."
+"Study C demonstrated..."
+
+as a sequence.
+
+Instead, synthesise the included evidence at the level of patterns, themes, approaches, outcomes, or research directions actually supported by the records.
+
+==================================================
+5. CONCLUSION
+==================================================
+
+Write a short evidence-grounded conclusion.
+
+The conclusion must answer:
+
+"What does the included evidence collectively suggest?"
+
+Do not make claims stronger than the evidence permits.
+
+Do not claim:
+- proven effectiveness;
+- causal relationships;
+- real-world implementation success;
+- universal applicability;
+- policy effectiveness;
+
+unless directly supported by the included evidence.
+
+Do not introduce recommendations that are absent from the evidence.
+
+Keep the conclusion concise.
+
+==================================================
+6. NO PROTOCOL TEXT IN ABSTRACT
+==================================================
+
+The abstract MUST NOT simply reproduce the protocol objectives or research questions.
+
+Do not copy large portions of:
+
+protocol.objectives
+protocol.researchQuestions
+protocol.pico
+protocol.eligibilityCriteria
+
+into the abstract.
+
+These fields may be used as source information, but the abstract must be rewritten into concise publication-style prose.
+
+In particular, prevent malformed constructions such as:
+
+"...to examine X., and to identify Y., and to assess Z..."
+
+or any other concatenated objective string.
+
+Normalize punctuation and sentence boundaries before inserting protocol content.
+
+==================================================
+7. NO GENERIC REVIEW-METHOD KEYWORDS
+==================================================
+
+Replace generic keywords such as:
+
+"Systematic Literature Review"
+"Evidence Synthesis"
+"Narrative Synthesis"
+"PRISMA"
+"Research Methodology"
+
+unless one is genuinely required by the target journal.
+
+Keywords should primarily represent the ACTUAL SUBJECT MATTER of the review.
+
+Generate approximately 5–8 keywords from:
+
+- protocol title/topic;
+- final included study titles;
+- final included abstracts;
+- meaningful StudyCharacteristic fields;
+- recurring evidence concepts.
+
+Keywords must be topic-specific.
+
+For example, for a maritime decarbonisation review, keywords might involve concepts such as:
+
+maritime decarbonisation; shipping emissions; alternative fuels; energy transition; low-carbon shipping
+
+But DO NOT hard-code these terms. Generate them from the actual evidence.
+
+Do not generate keywords merely because they describe the review methodology.
+
+==================================================
+8. IMPLEMENTATION
+==================================================
+
+Find the code responsible for generating the manuscript abstract and keywords, likely inside:
+
+FullReviewReport.tsx
+
+or the manuscript-generation/export logic.
+
+Replace the existing abstract-generation logic rather than adding another competing abstract generator.
+
+There must be ONE authoritative abstract value used by:
+
+1. On-screen manuscript
+2. Markdown export
+3. DOCX export
+4. Any manuscript preview/download
+
+Do not allow the screen version and exported versions to generate different abstracts.
+
+Use the same generated abstract string everywhere.
+
+==================================================
+9. AI GENERATION
+==================================================
+
+If the application uses an AI call to generate the abstract, send a compact evidence-grounded prompt.
+
+Provide the AI only the information it needs, including:
+
+- actual review topic/protocol context;
+- actual search sources;
+- actual final includedRecords;
+- relevant StudyCharacteristic data;
+- final included count.
+
+Do not send excluded records as evidence for the abstract.
+
+The AI response should preferably be structured internally as:
+
+{
+  "abstract": "...",
+  "keywords": ["...", "...", "..."]
+}
+
+Then validate the response.
+
+If the AI returns labels such as:
+
+"Background:"
+"Objective:"
+"Methods:"
+"Results:"
+"Conclusion:"
+
+strip those labels before displaying the abstract, while preserving the prose.
+
+==================================================
+10. VALIDATION
+==================================================
+
+Add validation before displaying/exporting the abstract.
+
+The validator should check:
+
+- abstract exists;
+- abstract is one paragraph;
+- abstract <= 300 words;
+- abstract ends with complete punctuation;
+- no obvious protocol-question concatenation;
+- no "RQ1", "RQ2", "RQ3" unless genuinely necessary;
+- no AI-screening terminology;
+- no unsupported full-text claims;
+- no fabricated statistics;
+- included count matches includedRecords.length.
+
+If the AI response fails validation, regenerate once with a stricter prompt.
+
+If regeneration is unavailable, use a deterministic fallback based ONLY on the actual protocol and includedRecords.
+
+==================================================
+11. IMPORTANT EVIDENCE RULE
+==================================================
+
+The abstract is part of the final manuscript and therefore follows the same Evidence Lock as the Results and Discussion.
+
+FINAL INCLUDED RECORDS ONLY.
+
+The abstract must never cite, describe, or rely on excluded records.
+
+Do not allow the AI to retrieve or infer evidence from outside the supplied includedRecords.
+
+==================================================
+12. EXAMPLE OF THE REQUIRED STYLE
+==================================================
+
+The final abstract should resemble this STYLE:
+
+"[Brief context]. This review synthesises [actual topic/focus] to identify the principal patterns and evidence emerging from the literature. A systematic literature search was conducted using [actual sources], followed by screening against predefined eligibility criteria. A total of XX records were included in the final synthesis. The included evidence indicates [actual broad finding/theme], with studies addressing [actual evidence areas] and highlighting [actual pattern or gap]. Overall, the evidence suggests [careful evidence-grounded conclusion], while further research is needed to address [actual gap, if supported]."
+
+This is ONLY a stylistic template.
+
+DO NOT copy its wording blindly.
+DO NOT hard-code its findings.
+DO NOT hard-code "XX".
+DO NOT force these exact sentences if they do not fit the actual evidence.
+
+==================================================
+13. ALSO FIX THE CURRENT MALFORMED ABSTRACT
+==================================================
+
+The current manuscript contains an obviously malformed Objective sentence where multiple objectives/research questions have been concatenated.
+
+Remove that construction completely.
+
+The final abstract should be:
+
+- concise;
+- coherent;
+- journal-style;
+- evidence-grounded;
+- one paragraph;
+- maximum 300 words;
+- based on the final included evidence;
+- free of AI/software terminology;
+- free of unsupported methodological claims.
+
+After making the changes, verify that the SAME abstract appears in:
+- manuscript preview;
+- Markdown;
+- DOCX;
+- any other manuscript export.

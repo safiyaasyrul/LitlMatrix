@@ -102,6 +102,8 @@ export interface SynthesisCategory {
 
 export interface SynthesisResult {
   suggestedTitle?: string;
+  titleCandidates?: string[];
+  titleCandidateEvidenceKey?: string;
   subtopics: {
     title: string;
     prose: string;

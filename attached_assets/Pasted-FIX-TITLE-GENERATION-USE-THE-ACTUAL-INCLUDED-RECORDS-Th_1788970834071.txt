@@ -1,0 +1,193 @@
+FIX TITLE GENERATION — USE THE ACTUAL INCLUDED RECORDS
+
+The current implementation is incorrect.
+
+The app currently returns:
+“I can’t generate defensible titles yet because the included records, abstracts, and extracted characteristics are not present in the message…”
+
+This must NOT happen.
+
+The application already has the uploaded records in state. The title-generation AI call must receive the actual includedRecords from the application state.
+
+IMPORTANT:
+Do not ask the user to paste or provide the records again.
+
+WORKFLOW
+
+RIS records
+→ deduplication
+→ screening
+→ final INCLUDE records
+→ title suggestion
+
+The title suggestion must be generated from the actual final includedRecords.
+
+SOURCE OF TRUTH
+
+Use:
+includedRecords
+
+Do NOT use:
+- a generic topic
+- the user's original title alone
+- hard-coded maritime terminology
+- generic examples
+- assumptions about the research domain
+- fabricated findings
+
+For each included record, provide the AI with the available:
+- record.id
+- record.title
+- record.abstract
+- record.authors
+- record.year/publication year if available
+- record.keywords if available
+- relevant extracted StudyCharacteristic fields if available
+
+Only include fields that actually exist in the current types/slr.ts.
+
+Do not invent missing fields.
+
+AI TITLE PROMPT
+
+Use a prompt conceptually like this:
+
+“You are generating publication-ready titles for a systematic literature review.
+
+The records below are the actual final included studies in this review. They are the sole evidence base for determining the review's scope and thematic focus.
+
+Analyze the recurring concepts, technologies/interventions/exposures, populations or systems, outcomes, methods, and contexts represented across the included records.
+
+Generate 5 concise candidate titles.
+
+Requirements:
+1. Titles must accurately represent the actual included evidence.
+2. Do not introduce concepts that are not supported by the records.
+3. Do not fabricate findings.
+4. Do not make the title narrower than the evidence.
+5. Do not make the title broader than the evidence.
+6. Do not mention artificial intelligence, AI screening, this application, or software.
+7. Do not write a protocol title.
+8. Do not simply concatenate keywords.
+9. Prefer conventional journal-style systematic review titles.
+10. Keep titles concise.
+11. Avoid subtitles that are complete sentences.
+12. Do not use a colon unless it materially improves clarity.
+
+Return ONLY JSON:
+
+{
+  "titles": [
+    "...",
+    "...",
+    "...",
+    "...",
+    "..."
+  ]
+}
+
+ACTUAL INCLUDED RECORDS:
+[INSERT THE SERIALIZED includedRecords HERE]
+”
+
+IMPLEMENTATION
+
+Find the existing title-generation/synthesis AI call.
+
+Do NOT create a separate expensive AI call if the synthesis AI call already processes the included studies.
+
+Prefer generating the title candidates in the existing synthesis call to conserve API usage.
+
+If synthesis already receives something like:
+
+const includedRecords = ...
+
+then serialize those records into the synthesis prompt.
+
+For example, conceptually:
+
+const titleSourceRecords = includedRecords.map(record => ({
+  id: record.id,
+  title: record.title,
+  abstract: record.abstract,
+  authors: record.authors,
+  year: record.year,
+  keywords: record.keywords
+}));
+
+Only use properties that actually exist in types/slr.ts.
+
+CRITICAL EVIDENCE LOCK
+
+The title must be based on the SAME final evidence set used by the manuscript.
+
+Do not use:
+records
+uploadedRecords
+screenedRecords
+allRecords
+
+unless they are actually the final INCLUDE set.
+
+Use:
+
+includedRecords
+
+The title must therefore change appropriately when the final included evidence changes.
+
+IMPORTANT:
+Do not put the 90-study AI processing limit on includedRecords itself.
+
+If AI processing is limited to 90 records, that is an AI processing optimization only.
+
+The actual includedRecords array must remain complete.
+
+For example:
+
+const synthesisInputRecords =
+  includedRecords.slice(0, AI_SYNTHESIS_LIMIT);
+
+But:
+
+const includedRecords = records.filter(
+  record => screening[record.id]?.agreed === true
+);
+
+must NOT be truncated.
+
+If the synthesis AI receives only the first 90 records because of the processing limit, clearly distinguish this internally from the complete evidence set. Do not claim that the title was generated from all included records if only 90 were supplied.
+
+BETTER APPROACH FOR TITLE GENERATION
+
+If includedRecords > AI_SYNTHESIS_LIMIT, create a compact deterministic evidence representation from ALL included records before the AI call, using only their available metadata/title/abstract/characteristics, then use that representation for title generation.
+
+Do not fabricate summaries.
+
+The AI may synthesize recurring concepts from the supplied records, but it must not invent concepts.
+
+UI
+
+The user should see the generated candidate titles and be able to select one.
+
+Provide approximately 5 candidates.
+
+The selected title should become the manuscript title.
+
+If title generation fails, use the user's configured title as fallback.
+
+Do NOT display an error asking the user to manually provide included records.
+
+VALIDATION
+
+After implementation, verify:
+
+1. Upload RIS.
+2. Complete screening.
+3. Confirm includedRecords.length > 0.
+4. Run synthesis.
+5. Confirm the title-generation prompt contains actual included record titles/abstracts.
+6. Confirm 5 evidence-grounded candidate titles are returned.
+7. Confirm candidates change when the included evidence changes.
+8. Confirm no generic hard-coded maritime title is generated for a non-maritime dataset.
+9. Confirm the final manuscript uses the selected/generated title.
+10. Confirm includedRecords is never truncated because of the AI processing limit.

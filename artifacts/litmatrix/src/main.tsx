@@ -63,6 +63,8 @@ function AdminAccess() {
     remaining: number;
     utilizationPercent: number;
     activeUsers: number;
+    activeUserLimit: number;
+    activeUserRemaining: number;
     perUserLimit: number;
     exhaustedUsers: number;
     users: Array<{
@@ -174,7 +176,7 @@ function AdminAccess() {
               <div className="mt-3 flex items-center gap-3 border-t border-slate-200 pt-3 text-xs text-slate-600">
                 <span className="flex items-center gap-1">
                   <Users className="h-3.5 w-3.5" />
-                  {aiUsage.activeUsers} active
+                  {aiUsage.activeUsers}/{aiUsage.activeUserLimit} active
                 </span>
                 <span>{aiUsage.exhaustedUsers} at limit</span>
               </div>

@@ -26,8 +26,8 @@ export default function PrismaDiagram({ counts, showActions = true }: PrismaDiag
     const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
     image.onload = () => {
       const canvas = document.createElement("canvas");
-      canvas.width = 2400;
-      canvas.height = 1520;
+      canvas.width = 2480;
+      canvas.height = 2840;
       const context = canvas.getContext("2d");
       if (context) {
         context.fillStyle = "#ffffff";
@@ -52,7 +52,7 @@ export default function PrismaDiagram({ counts, showActions = true }: PrismaDiag
               <Layers className="w-3.5 h-3.5" />
             </div>
             <span className="font-mono text-xs font-semibold text-slate-800 uppercase tracking-wider">
-              Adapted PRISMA 2020 · Item 16a
+               PRISMA 2020 · Flow diagram
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -68,8 +68,8 @@ export default function PrismaDiagram({ counts, showActions = true }: PrismaDiag
 
       {!hasRecords ? (
         <div className="border border-amber-200 bg-amber-50 p-6 rounded-xl text-center">
-          <p className="font-mono text-sm font-semibold text-amber-900">PRISMA counts will appear after records are imported.</p>
-          <p className="text-xs text-amber-800 mt-1">No zero-count flow is presented before the review library has data.</p>
+           <p className="font-mono text-sm font-semibold text-amber-900">PRISMA counts will appear after records are imported.</p>
+           <p className="text-xs text-amber-800 mt-1">Import records to populate the standard flow diagram.</p>
         </div>
       ) : (
         <div className="border border-slate-200 bg-white p-4 sm:p-6 rounded-xl shadow-xs overflow-x-auto">

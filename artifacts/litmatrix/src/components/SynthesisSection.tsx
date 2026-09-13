@@ -28,12 +28,6 @@ interface SynthesisSectionProps {
   onNavigateToScreening?: () => void;
 }
 
-/*
- * The evidence lock is unrestricted.
- * The AI writing pass is capped separately to keep downstream
- * API usage predictable without changing PRISMA/evidence counts.
- */
-const AI_SYNTHESIS_LIMIT = 90;
 const MIN_SYNTHESIS_CLUSTERS = 3;
 
 type SynthesisStudy = StudyCharacteristic & {
@@ -184,16 +178,11 @@ const buildTitleSourceRecords = (
       characteristic,
     ])
   );
-  const compactAbstracts = records.length > AI_SYNTHESIS_LIMIT;
-
   return records.map((record) => {
     const characteristic = characteristicMap.get(record.id);
     const sourceRecord: Record<string, unknown> = {
       id: record.id,
       title: cleanText(record.title),
-      abstract: compactAbstracts
-        ? cleanText(record.abstract).slice(0, 1200)
-        : cleanText(record.abstract),
       authors: Array.isArray(record.authors) ? record.authors : [],
       year: cleanText(record.year),
     };
@@ -593,12 +582,6 @@ export default function SynthesisSection({
     setGenerating(true);
     setErrorMessage(null);
 
-    /*
-     * The evidence lock remains the complete included set. The AI writing
-     * pass is capped only to control downstream API usage. For reviews with
-     * <= 90 records, every included record is supplied to the writing pass.
-     */
-    const studiesForAI = synthesisStudies.slice(0, AI_SYNTHESIS_LIMIT);
     const titleSourceRecords = buildTitleSourceRecords(
       includedRecords,
       characteristics
@@ -610,21 +593,16 @@ ${INTEGRATED_SYNTHESIS_PROMPT}
 EVIDENCE-BASE NOTE:
 
 The final evidence lock contains ${synthesisStudies.length} included records.
-The current writing pass contains ${studiesForAI.length} supplied records.
-
-Do not infer information about records outside the supplied writing-pass
-records. The application retains the complete final evidence lock for
-downstream evidence accounting.
+Every included record is supplied to this writing pass. Do not omit records
+from evidence accounting, even when only a subset contributes directly to a
+particular theme.
 
 SUPPLIED RECORDS:
-${JSON.stringify(studiesForAI, null, 2)}
+${JSON.stringify(synthesisStudies, null, 2)}
 
 COMPLETE TITLE EVIDENCE BASE:
 The following compact representation contains all ${includedRecords.length}
 final included records and is the sole source for the five title candidates.
-${includedRecords.length > AI_SYNTHESIS_LIMIT
-  ? "To keep the request bounded, every record is represented and long abstracts are deterministically limited to their first 1,200 characters."
-  : "The complete available abstracts are supplied."}
 
 ${JSON.stringify(titleSourceRecords, null, 2)}
 `;
@@ -633,7 +611,8 @@ ${JSON.stringify(titleSourceRecords, null, 2)}
       const text = await callAI(
         prompt,
         "You are an expert systematic review methodologist focused on transparent, evidence-grounded narrative and thematic synthesis.",
-        aiConfig
+        aiConfig,
+        4000
       );
 
       const parsed = parseJSONLoose(text);
@@ -934,12 +913,9 @@ ${JSON.stringify(titleSourceRecords, null, 2)}
             Final included records only
           </div>
 
-          {includedRecords.length > AI_SYNTHESIS_LIMIT && (
-            <div className="text-[10px] font-mono text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md">
-              Narrative writing pass limited to{" "}
-              {AI_SYNTHESIS_LIMIT} records
-            </div>
-          )}
+          <div className="text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
+            All included records carried into synthesis
+          </div>
         </div>
 
         {/* Tab navigation */}

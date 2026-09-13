@@ -118,8 +118,11 @@ export const buildPrismaSvg = (rawCounts: PrismaSvgCounts) => {
     { text: countLabel(counts.screened) },
   ])}
   ${flowBox(rightX, screeningY, boxWidth, 100, [
-    { text: "Records excluded**", emphasis: true },
+    { text: "Records excluded", emphasis: true },
     { text: countLabel(counts.screenedExcluded) },
+    ...(rawCounts.unresolved > 0
+      ? [{ text: `Records awaiting decision ${countLabel(rawCounts.unresolved)}` }]
+      : []),
   ])}
   ${arrow(leftX + boxWidth, screeningY + 50, rightX, screeningY + 50)}
 

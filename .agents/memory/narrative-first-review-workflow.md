@@ -14,3 +14,9 @@ Narrative and thematic synthesis must carry every final included record forward;
 **Why:** A capped writing subset can produce themes and conclusions that do not represent the final included evidence set, even when PRISMA counts and references remain complete.
 
 **How to apply:** Preserve complete included-record accounting in synthesis prompts, fallbacks, evidence matrices, manuscript sections, and exports. Use bounded per-record representations or multi-pass processing when request size requires it, never a first-N record cap.
+
+Manuscript study tables list included papers only. Conclusions must summarize the synthesized included evidence without any in-text citations or citation markers.
+
+**Why:** Excluded records do not belong in the included-study evidence table, and the requested conclusion style is a citation-free synthesis rather than a repetition of cited discussion text.
+
+**How to apply:** Keep exclusion counts in PRISMA reporting, but omit excluded and unresolved papers from manuscript evidence tables. Build conclusions from synthesis themes and implications, then remove author-year and numeric citations in preview and every export format.

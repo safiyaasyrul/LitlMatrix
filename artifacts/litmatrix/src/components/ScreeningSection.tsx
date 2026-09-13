@@ -95,14 +95,395 @@ export default function ScreeningSection({
   };
 
   // AI-assisted screening
-  const runAIScreening = async (configOverride?: AIProviderConfig) => {
-    // State updates are asynchronous; the ref prevents two rapid clicks from
-    // creating overlapping AI batches before the button disables.
-    if (screeningPool.length === 0 || screeningRunRef.current) return;
-    screeningRunRef.current = true;
-    setRunningScreening(true);
-    setProgress(0);
-    setErrorMessage(null);
+ const runAIScreening = async (
+  configOverride?: AIProviderConfig
+) => {
+  if (
+    screeningPool.length === 0 ||
+    screeningRunRef.current
+  ) {
+    return;
+  }
+
+  screeningRunRef.current = true;
+  setRunningScreening(true);
+  setProgress(0);
+  setErrorMessage(null);
+
+  const unresolvedRecords =
+    screeningPool.filter(
+      (record) =>
+        screening[record.id]?.agreed === undefined
+    );
+
+  if (unresolvedRecords.length === 0) {
+    setErrorMessage(
+      "All imported records already have screening decisions. No new AI calls were made."
+    );
+
+    screeningRunRef.current = false;
+    setRunningScreening(false);
+    return;
+  }
+
+  /*
+   * Small batches are intentional.
+   * Keeping the batch small reduces malformed JSON and
+   * makes partial recovery possible.
+   */
+  const batchSize = 4;
+
+  const recordsToScreen = unresolvedRecords;
+
+  const totalBatches = Math.ceil(
+    recordsToScreen.length / batchSize
+  );
+
+  const nextScreening = {
+    ...screening,
+  };
+
+  const effectiveThreshold = Math.max(
+    STRICT_SCREENING_THRESHOLD,
+    protocol.selectionProcess.screeningThreshold || 0
+  );
+
+  try {
+    for (
+      let b = 0;
+      b < totalBatches;
+      b++
+    ) {
+      const batch = recordsToScreen.slice(
+        b * batchSize,
+        (b + 1) * batchSize
+      );
+
+      const batchIds = new Set(
+        batch.map((record) => record.id)
+      );
+
+      /*
+       * Give the model enough record-level information
+       * to make a defensible screening decision.
+       */
+      const payload = batch.map((record) => ({
+        id: record.id,
+        title: record.title || "",
+        abstract: (record.abstract || "").slice(
+          0,
+          2000
+        ),
+        authors: Array.isArray(record.authors)
+          ? record.authors
+          : [],
+        year: record.year || "",
+        journal:
+          (record as any).journal ||
+          (record as any).source ||
+          "",
+        keywords:
+          Array.isArray((record as any).keywords)
+            ? (record as any).keywords
+            : [],
+      }));
+
+      const prompt = `
+SYSTEMATIC REVIEW SCREENING
+
+Protocol title:
+"${protocol.title}"
+
+INCLUSION CRITERIA:
+${protocol.eligibilityCriteria.inclusion
+  .map((item) => `- ${item}`)
+  .join("\n")}
+
+EXCLUSION CRITERIA:
+${protocol.eligibilityCriteria.exclusion
+  .map((item) => `- ${item}`)
+  .join("\n")}
+
+SCREENING THRESHOLD:
+${effectiveThreshold}/100
+
+TASK:
+
+Screen each supplied record independently using ONLY the
+information contained in that record and the supplied review
+criteria.
+
+This is RECORD-LEVEL TITLE/ABSTRACT SCREENING.
+
+Do not claim that the full text was reviewed.
+
+Do not infer missing information.
+
+Do not assume that a study is eligible merely because it
+shares keywords with the review topic.
+
+For each record:
+
+1. Determine whether the available record information
+   supports inclusion.
+2. Assign an eligibility score from 0 to 100.
+3. Provide a concise criterion-specific reason.
+4. If the evidence is insufficient for inclusion, score it
+   below ${effectiveThreshold}.
+5. Select the most appropriate exclusion reason when
+   excluding.
+
+IMPORTANT:
+
+- Every supplied record MUST have exactly one decision.
+- Do not omit a record.
+- Use the exact record ID supplied.
+- Do not invent record IDs.
+- Do not add records that were not supplied.
+- Do not return Markdown.
+- Do not return explanatory text outside the JSON.
+- Return valid JSON only.
+
+VALID EXCLUSION REASONS:
+
+"Secondary literature / Review paper"
+"Out of scope / Keyword mismatch"
+"Wrong population"
+"Wrong intervention / exposure"
+"Wrong comparator"
+"Wrong outcome"
+"Wrong study design"
+"Not accessible / full text unavailable"
+"Duplicate / non-original"
+"Language barrier"
+"Other"
+
+SUPPLIED RECORDS:
+
+${JSON.stringify(payload, null, 2)}
+
+RETURN EXACTLY THIS JSON STRUCTURE:
+
+{
+  "decisions": [
+    {
+      "id": "exact supplied record id",
+      "score": 0,
+      "reason": "criterion-specific justification",
+      "exclusionReason": "Wrong population"
+    }
+  ]
+}
+`;
+
+      let batchCompleted = false;
+
+      try {
+        const text = await callAI(
+          prompt,
+          "You are an expert systematic review screening methodologist. Return only valid JSON.",
+          configOverride || aiConfig,
+          1800
+        );
+
+        let parsed: any;
+
+        try {
+          parsed = parseJSONLoose(text);
+        } catch {
+          parsed = null;
+        }
+
+        /*
+         * Accept both:
+         *
+         * { decisions: [...] }
+         *
+         * and the older:
+         *
+         * [...]
+         *
+         * format.
+         */
+        const decisions = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed?.decisions)
+            ? parsed.decisions
+            : [];
+
+        if (decisions.length === 0) {
+          throw new Error(
+            "AI returned no usable screening decisions."
+          );
+        }
+
+        let acceptedDecisions = 0;
+
+        for (const decision of decisions) {
+          if (
+            !decision ||
+            !batchIds.has(decision.id)
+          ) {
+            continue;
+          }
+
+          const numericScore =
+            typeof decision.score === "number"
+              ? decision.score
+              : Number(decision.score);
+
+          if (
+            !Number.isFinite(numericScore)
+          ) {
+            continue;
+          }
+
+          const finalScore = Math.max(
+            0,
+            Math.min(100, numericScore)
+          );
+
+          const isInclude =
+            finalScore >= effectiveThreshold;
+
+          nextScreening[decision.id] = {
+            score: finalScore,
+
+            reason:
+              typeof decision.reason === "string" &&
+              decision.reason.trim()
+                ? decision.reason.trim()
+                : isInclude
+                  ? "The supplied record supports the eligibility criteria."
+                  : "The supplied record does not sufficiently support the eligibility criteria.",
+
+            decision: isInclude
+              ? "include"
+              : "exclude",
+
+            agreed: isInclude,
+
+            exclusionReason: !isInclude
+              ? decision.exclusionReason ||
+                "Other"
+              : undefined,
+          };
+
+          acceptedDecisions += 1;
+        }
+
+        /*
+         * A malformed/partial response must not silently
+         * mark missing records as excluded.
+         */
+        const unresolvedBatchRecords =
+          batch.filter(
+            (record) =>
+              nextScreening[record.id]
+                ?.agreed === undefined
+          );
+
+        if (
+          unresolvedBatchRecords.length > 0
+        ) {
+          console.warn(
+            `Screening batch ${b + 1} returned ${acceptedDecisions}/${batch.length} usable decisions.`,
+            unresolvedBatchRecords.map(
+              (record) => record.id
+            )
+          );
+
+          throw new Error(
+            `AI returned only ${acceptedDecisions} of ${batch.length} valid screening decisions.`
+          );
+        }
+
+        batchCompleted = true;
+      } catch (err: any) {
+        console.warn(
+          "AI screening batch error:",
+          err
+        );
+
+        const isProviderQuotaError =
+          /quota|rate limit|resource[_\s-]?exhausted|exceeded your current quota|insufficient credits|credits/i.test(
+            err?.message || ""
+          );
+
+        /*
+         * Save all successfully completed decisions
+         * before reporting the failure.
+         */
+        onUpdateScreening({
+          ...nextScreening,
+        });
+
+        const remainingUnresolved =
+          screeningPool.filter(
+            (record) =>
+              nextScreening[record.id]
+                ?.agreed === undefined
+          ).length;
+
+        setErrorMessage(
+          `AI screening could not complete batch ${
+            b + 1
+          }. Completed decisions were kept; ${
+            remainingUnresolved
+          } record${
+            remainingUnresolved === 1
+              ? ""
+              : "s"
+          } remain unresolved. ${
+            err?.message ||
+            "The AI response could not be parsed."
+          }`
+        );
+
+        /*
+         * Stop immediately on quota/rate-limit errors.
+         * The user can continue later without losing
+         * completed screening decisions.
+         */
+        if (isProviderQuotaError) {
+          setProgress(
+            Math.round(
+              (b / totalBatches) * 100
+            )
+          );
+
+          break;
+        }
+
+        /*
+         * Stop on malformed responses as well.
+         * We do NOT automatically repeat the same API call,
+         * because that would increase API usage.
+         *
+         * The user can press Continue AI Screening later.
+         */
+        break;
+      }
+
+      if (!batchCompleted) {
+        break;
+      }
+
+      setProgress(
+        Math.round(
+          ((b + 1) / totalBatches) * 100
+        )
+      );
+
+      onUpdateScreening({
+        ...nextScreening,
+      });
+    }
+  } finally {
+    screeningRunRef.current = false;
+    setRunningScreening(false);
+  }
+};
 
     const unresolvedRecords = screeningPool.filter(
       (record) => screening[record.id]?.agreed === undefined

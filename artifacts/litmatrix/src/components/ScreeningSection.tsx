@@ -182,24 +182,15 @@ Return ONLY a JSON array:
           const remainingUnresolved = screeningPool.filter(
             (record) => nextScreening[record.id]?.agreed === undefined
           ).length;
-          const isManagedLimit =
-            (err instanceof AIRequestError &&
-              err.status === 429 &&
-              /managed-ai/i.test(err.message)) ||
-            /daily managed-ai limit reached/i.test(err?.message || "");
           const isProviderQuotaError =
             /quota|rate limit|resource[_\s-]?exhausted|exceeded your current quota|insufficient credits|credits/i.test(
               err?.message || ""
             );
           setErrorMessage(
-            isManagedLimit && remainingUnresolved === 0
-              ? "All imported records already have screening decisions. No unresolved records remain, so no retry is needed."
-              : isManagedLimit
-                ? `${err?.message || "Managed AI is unavailable."} Completed decisions were kept; ${remainingUnresolved} record${remainingUnresolved === 1 ? "" : "s"} remain unresolved. Resume after the UTC-day reset or select a configured direct provider in AI Configuration.`
-                : `AI screening could not complete batch ${b + 1}. Completed decisions were kept; affected records remain unresolved. ${err?.message || "Request failed."}`
+            `AI screening could not complete batch ${b + 1}. Completed decisions were kept; ${remainingUnresolved} affected record${remainingUnresolved === 1 ? "" : "s"} remain unresolved. ${err?.message || "Request failed."}`
           );
           onUpdateScreening({ ...nextScreening });
-          if (isManagedLimit || isProviderQuotaError) {
+          if (isProviderQuotaError) {
             setProgress(Math.round((b / totalBatches) * 100));
             break;
           }

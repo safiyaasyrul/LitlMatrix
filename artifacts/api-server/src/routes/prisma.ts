@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { clerkClient, getAuth } from "@clerk/express";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   accessRequests,
@@ -12,18 +12,6 @@ import {
 
 const router = Router();
 const ownerEmail = process.env.PRISMA_OWNER_EMAIL?.trim().toLowerCase();
-
-function positiveInteger(value: string | undefined, fallback: number) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
-}
-
-const perUserLimit = positiveInteger(process.env.PRISMA_MANAGED_AI_DAILY_USER_LIMIT, 100);
-const dailyActiveUserLimit = positiveInteger(process.env.PRISMA_MANAGED_AI_DAILY_ACTIVE_USER_LIMIT, 100);
-const globalDailyCapacity = positiveInteger(
-  process.env.PRISMA_MANAGED_AI_DAILY_CAPACITY,
-  perUserLimit * dailyActiveUserLimit,
-);
 
 async function identity(req: any) {
   const { userId } = getAuth(req);
@@ -71,7 +59,6 @@ router.get("/me", async (req, res, next) => {
       user: result.user,
       status: result.allowed ? "approved" : result.access?.status ?? "pending",
       owner: result.owner,
-      dailyLimit: perUserLimit,
     });
   } catch (error) { return next(error); }
 });
@@ -117,65 +104,13 @@ router.post("/ai/generate", async (req, res, next) => {
       : 3500;
     const userId = res.locals.prismaIdentity.user.id;
     const today = new Date().toISOString().slice(0, 10);
-    const reservation = await db.transaction(async (tx) => {
-      await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtext(${`prisma-managed-ai:${today}`}))`,
-      );
-
-      const [existingUsage] = await tx.select({ calls: dailyAiUsage.calls })
-        .from(dailyAiUsage)
-        .where(and(
-          eq(dailyAiUsage.userId, userId),
-          eq(dailyAiUsage.usageDate, today),
-        ))
-        .limit(1);
-
-      if (!existingUsage) {
-        const [activeUsage] = await tx.select({
-          count: sql<number>`count(*)::int`,
-        }).from(dailyAiUsage).where(eq(dailyAiUsage.usageDate, today));
-        if ((activeUsage?.count ?? 0) >= dailyActiveUserLimit) {
-          return {
-            error: "Daily managed-AI user capacity reached. Try again after the UTC-day reset or use a configured direct provider.",
-            limit: dailyActiveUserLimit,
-          } as const;
-        }
-      }
-
-      if ((existingUsage?.calls ?? 0) >= perUserLimit) {
-        return {
-          error: "Daily managed-AI limit reached.",
-          limit: perUserLimit,
-        } as const;
-      }
-
-      const [dailyUsage] = await tx.select({
-        calls: sql<number>`coalesce(sum(${dailyAiUsage.calls}), 0)::int`,
-      }).from(dailyAiUsage).where(eq(dailyAiUsage.usageDate, today));
-      if ((dailyUsage?.calls ?? 0) >= globalDailyCapacity) {
-        return {
-          error: "Daily managed-AI capacity reached. Try again after the UTC-day reset or use a configured direct provider.",
-          limit: globalDailyCapacity,
-        } as const;
-      }
-
-      const [usage] = await tx.insert(dailyAiUsage)
-        .values({ userId, usageDate: today, calls: 1 })
-        .onConflictDoUpdate({
-          target: [dailyAiUsage.userId, dailyAiUsage.usageDate],
-          set: { calls: sql`${dailyAiUsage.calls} + 1` },
-        })
-        .returning();
-      return { usage } as const;
-    });
-    if ("error" in reservation) {
-      return res.status(429).json({
-        error: reservation.error,
-        limit: reservation.limit,
-        remaining: 0,
-      });
-    }
-    const { usage } = reservation;
+    const [usage] = await db.insert(dailyAiUsage)
+      .values({ userId, usageDate: today, calls: 1 })
+      .onConflictDoUpdate({
+        target: [dailyAiUsage.userId, dailyAiUsage.usageDate],
+        set: { calls: sql`${dailyAiUsage.calls} + 1` },
+      })
+      .returning();
     const baseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
     const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
     if (!baseUrl || !apiKey) return res.status(503).json({ error: "Managed AI is not configured on the server." });
@@ -188,7 +123,7 @@ router.post("/ai/generate", async (req, res, next) => {
     });
     const data: any = await response.json().catch(() => ({}));
     if (!response.ok || data.error) return res.status(response.status || 502).json({ error: data.error?.message ?? "Managed AI request failed." });
-    return res.json({ text: data.choices?.[0]?.message?.content ?? "", usage: { limit: perUserLimit, used: usage.calls, remaining: perUserLimit - usage.calls } });
+    return res.json({ text: data.choices?.[0]?.message?.content ?? "", usage: { used: usage.calls } });
   } catch (error) { return next(error); }
 });
 
@@ -212,24 +147,15 @@ router.get("/admin/ai-usage", async (_req, res, next) => {
       .where(eq(dailyAiUsage.usageDate, today))
       .orderBy(desc(dailyAiUsage.calls));
     const used = usageRows.reduce((total, row) => total + row.calls, 0);
-    const remaining = Math.max(0, globalDailyCapacity - used);
     return res.json({
       date: today,
-      capacity: globalDailyCapacity,
       used,
-      remaining,
-      utilizationPercent: Math.min(100, Math.round((used / globalDailyCapacity) * 100)),
       activeUsers: usageRows.length,
-      activeUserLimit: dailyActiveUserLimit,
-      activeUserRemaining: Math.max(0, dailyActiveUserLimit - usageRows.length),
-      perUserLimit,
-      exhaustedUsers: usageRows.filter((row) => row.calls >= perUserLimit).length,
       users: usageRows.slice(0, 100).map((row) => ({
         userId: row.userId,
         email: row.email,
         name: row.name,
         used: row.calls,
-        remaining: Math.max(0, perUserLimit - row.calls),
       })),
     });
   } catch (error) { return next(error); }

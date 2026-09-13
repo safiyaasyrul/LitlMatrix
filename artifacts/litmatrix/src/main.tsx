@@ -58,21 +58,13 @@ function AccessGate() {
 function AdminAccess() {
   type AIUsageSummary = {
     date: string;
-    capacity: number;
     used: number;
-    remaining: number;
-    utilizationPercent: number;
     activeUsers: number;
-    activeUserLimit: number;
-    activeUserRemaining: number;
-    perUserLimit: number;
-    exhaustedUsers: number;
     users: Array<{
       userId: string;
       email: string;
       name: string | null;
       used: number;
-      remaining: number;
     }>;
   };
 
@@ -143,42 +135,21 @@ function AdminAccess() {
           </div>
           {aiUsage ? (
             <>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-lg bg-white p-2.5 shadow-xs">
                   <div className="text-[10px] uppercase tracking-wide text-slate-500">Used</div>
                   <div className="mt-0.5 text-lg font-bold text-slate-900">{aiUsage.used}</div>
                 </div>
                 <div className="rounded-lg bg-white p-2.5 shadow-xs">
-                  <div className="text-[10px] uppercase tracking-wide text-slate-500">Remaining</div>
-                  <div className="mt-0.5 text-lg font-bold text-emerald-700">{aiUsage.remaining}</div>
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500">Active users</div>
+                  <div className="mt-0.5 text-lg font-bold text-slate-900">{aiUsage.activeUsers}</div>
                 </div>
-                <div className="rounded-lg bg-white p-2.5 shadow-xs">
-                  <div className="text-[10px] uppercase tracking-wide text-slate-500">Capacity</div>
-                  <div className="mt-0.5 text-lg font-bold text-slate-900">{aiUsage.capacity}</div>
-                </div>
-              </div>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
-                <div
-                  className={`h-full rounded-full transition-all ${
-                    aiUsage.utilizationPercent >= 90
-                      ? "bg-rose-500"
-                      : aiUsage.utilizationPercent >= 70
-                        ? "bg-amber-500"
-                        : "bg-emerald-500"
-                  }`}
-                  style={{ width: `${aiUsage.utilizationPercent}%` }}
-                />
-              </div>
-              <div className="mt-1.5 flex justify-between text-[10px] text-slate-500">
-                <span>{aiUsage.utilizationPercent}% used</span>
-                <span>{aiUsage.perUserLimit} calls/user/day</span>
               </div>
               <div className="mt-3 flex items-center gap-3 border-t border-slate-200 pt-3 text-xs text-slate-600">
                 <span className="flex items-center gap-1">
                   <Users className="h-3.5 w-3.5" />
-                  {aiUsage.activeUsers}/{aiUsage.activeUserLimit} active
+                  {aiUsage.activeUsers} active today
                 </span>
-                <span>{aiUsage.exhaustedUsers} at limit</span>
               </div>
               {aiUsage.users.length > 0 && (
                 <div className="mt-3 max-h-36 space-y-1 overflow-y-auto">
@@ -188,14 +159,14 @@ function AdminAccess() {
                         {usageUser.email}
                       </span>
                       <span className="shrink-0 font-mono text-slate-500">
-                        {usageUser.used}/{aiUsage.perUserLimit}
+                         {usageUser.used} calls
                       </span>
                     </div>
                   ))}
                 </div>
               )}
               <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
-                Remaining capacity is measured against the app’s configured daily monitoring budget, not the provider account balance.
+                Usage is tracked for visibility only. Managed AI calls are not capped by this app.
               </p>
             </>
           ) : (

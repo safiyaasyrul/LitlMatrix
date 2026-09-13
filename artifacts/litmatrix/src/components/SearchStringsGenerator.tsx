@@ -432,7 +432,8 @@ Construct reproducible, fully validated Boolean search strings for the following
 4. IEEE Xplore: Complete syntax using ("Document Title" OR "Abstract") with publication year range.
 5. Google Scholar / ACM Digital Library: Optimized Boolean search string.
 
-Return ONLY a JSON array of objects with the exact schema:
+Return ONLY a compact JSON array of objects with the exact schema. Do not use Markdown fences or explanatory text.
+Keep every query on one line. Any double quotes inside a query string must be escaped for JSON (for example: "query": "TS=(\\"diabetes\\" OR \\"diabetic\\")").
 [
   {
     "database": "Scopus",
@@ -461,7 +462,7 @@ Return ONLY a JSON array of objects with the exact schema:
   }
 ]`;
 
-      const text = await callAI(prompt, "You are a professional research librarian and Boolean search string engineer.", aiConfig);
+      const text = await callAI(prompt, "You are a professional research librarian and Boolean search string engineer. Return syntactically valid JSON only.", aiConfig, 4000);
       const parsedStrategies = extractSearchStrategies(parseJSONLoose(text));
       const fallbackStrategies = buildFallbackSearchStrategies(
         keywords,

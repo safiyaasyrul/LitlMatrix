@@ -112,10 +112,20 @@ function buildFallbackSearchStrategies(
       .map((keyword) => quoteSearchTerm(keyword.term));
     return terms.length > 0 ? `(${terms.join(" OR ")})` : "";
   }).filter(Boolean);
-  const topic = (conceptBlocks.length > 0
-    ? conceptBlocks
-    : [`(${uniqueTerms.map(quoteSearchTerm).join(" OR ")})`]
-  ).join(" AND ");
+  // Initial PICO fields are often single, long phrases rather than synonym
+  // groups. Requiring every one with AND can legitimately return zero records.
+  // Use a broad OR starter query until the user has supplied enough synonyms
+  // to form multiple concept blocks.
+  const hasSynonymBlocks = conceptBlocks.length >= 2 &&
+    keywords.some((keyword) => keyword.selected && keyword.term.trim() &&
+      keywords.filter((candidate) =>
+        candidate.selected &&
+        candidate.category === keyword.category &&
+        candidate.term.trim()
+      ).length > 1);
+  const topic = hasSynonymBlocks
+    ? conceptBlocks.join(" AND ")
+    : `(${uniqueTerms.map(quoteSearchTerm).join(" OR ") || "\"systematic review\""})`;
   const scopusFilters = [
     `PUBYEAR > ${yearFrom - 1}`,
     `PUBYEAR < ${yearTo + 1}`,
@@ -252,7 +262,7 @@ export default function SearchStringsGenerator({
   const [newKeywordCategory, setNewKeywordCategory] = useState<KeywordItem["category"]>("Concept 1 (Population / Domain)");
   
   // Subject Area Filters (Scopus SUBJAREA & WoS WC/SU)
-  const [selectedSubjectAreas, setSelectedSubjectAreas] = useState<string[]>(["COMP", "ENGI"]);
+  const [selectedSubjectAreas, setSelectedSubjectAreas] = useState<string[]>([]);
   const [customSubjectArea, setCustomSubjectArea] = useState("");
 
   // Publication Stage (In Press vs Published Final)

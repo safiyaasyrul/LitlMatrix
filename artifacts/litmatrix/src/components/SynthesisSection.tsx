@@ -16,6 +16,9 @@ import {
 } from "lucide-react";
 import { callAI, parseJSONLoose } from "../utils/aiClient";
 import { getIncludedEvidenceKey } from "../utils/evidenceKey";
+import {
+  buildEvidenceBudget,
+} from "../utils/evidenceSelection";
 
 interface SynthesisSectionProps {
   protocol: SLRProtocol;
@@ -472,14 +475,30 @@ export default function SynthesisSection({
    * ALL final included records remain in the synthesis evidence base.
    * Characteristics are supplementary and never determine inclusion.
    */
-  const synthesisStudies = useMemo(
-    () =>
-      buildStudiesFromRecords(
-        includedRecords,
-        characteristics
-      ),
-    [includedRecords, characteristics]
-  );
+const evidenceBudget = useMemo(
+  () =>
+    buildEvidenceBudget(
+      includedRecords,
+      characteristics,
+      protocol
+    ),
+  [includedRecords, characteristics, protocol]
+);
+
+const introductionRecords =
+  evidenceBudget.introductionRecords;
+
+const detailedEvidenceRecords =
+  evidenceBudget.detailedRecords;
+
+const synthesisStudies = useMemo(
+  () =>
+    buildStudiesFromRecords(
+      detailedEvidenceRecords,
+      characteristics
+    ),
+  [detailedEvidenceRecords, characteristics]
+);
 
   const fallbackTitleOptions = useMemo(
     () => suggestReviewTitles(includedRecords),
@@ -582,27 +601,100 @@ export default function SynthesisSection({
     setGenerating(true);
     setErrorMessage(null);
 
-    const titleSourceRecords = buildTitleSourceRecords(
-      includedRecords,
-      characteristics
-    );
+   const titleSourceRecords =
+  buildTitleSourceRecords(
+    detailedEvidenceRecords,
+    characteristics
+  );
 
     const prompt = `
 ${INTEGRATED_SYNTHESIS_PROMPT}
 
 EVIDENCE-BASE NOTE:
 
-The final evidence lock contains ${synthesisStudies.length} included records.
-Every included record is supplied to this writing pass. Do not omit records
-from evidence accounting, even when only a subset contributes directly to a
-particular theme.
+The complete final included evidence set contains
+${includedRecords.length} records.
 
-SUPPLIED RECORDS:
+For this AI synthesis writing pass, only
+${detailedEvidenceRecords.length} records have been supplied.
+
+These records were selected locally from the included evidence
+using a two-stage evidence budget:
+
+1. title relevance selection;
+2. method/study/content/intervention relevance selection.
+
+Do not claim that all ${includedRecords.length} records were directly
+analyzed by this AI writing pass.
+
+Do not invent evidence from records that are not supplied below.
+
+The complete final included record set remains the citation and
+reference universe for the manuscript, but every substantive
+statement generated in this synthesis must be supported by the
+records actually supplied to this writing pass.
+SUPPLIED SYNTHESIS RECORDS:
 ${JSON.stringify(synthesisStudies, null, 2)}
 
-COMPLETE TITLE EVIDENCE BASE:
-The following compact representation contains all ${includedRecords.length}
-final included records and is the sole source for the five title candidates.
+
+TITLE GENERATION:
+
+Generate exactly five publication-ready systematic literature
+review titles.
+
+The titles must be derived ONLY from the supplied title-evidence
+records.
+
+Before generating titles, internally identify:
+
+1. The central subject or phenomenon.
+2. The main intervention, technology, strategy, exposure, or
+   research focus, where consistently supported.
+3. The relevant population, system, sector, environment, or
+   application context, where supported.
+4. The principal outcome or purpose, where supported.
+5. The appropriate scope of the review.
+
+Do NOT simply concatenate frequently occurring keywords.
+
+Do NOT copy the title of an included paper.
+
+Do NOT create a title that is broader than the supplied evidence.
+
+Do NOT create a title that is narrower than the supplied evidence.
+
+Do NOT introduce an intervention, population, outcome, technology,
+method, sector, or application that is not supported by the
+supplied records.
+
+Do NOT use generic filler such as:
+
+- "A Review of the Literature"
+- "Evidence from Included Studies"
+- "Current Trends"
+- "Recent Advances"
+- "An Overview"
+- "A Comprehensive Review"
+
+Do NOT include "PRISMA 2020" in the title.
+
+Do NOT mention artificial intelligence, AI, software, automation,
+screening, or LitlMatrix.
+
+Prefer a concise title of approximately 10–20 words.
+
+Use a colon only when it substantially improves precision.
+
+The five candidates must be meaningfully different in wording
+while describing the same evidence-supported review scope.
+
+Candidate 1 must be the strongest and most publication-ready title.
+
+Candidates 2–5 should provide genuinely different formulations,
+not superficial word substitutions.
+
+The title must describe what the included evidence is actually
+about, rather than describing the review process itself.
 
 ${JSON.stringify(titleSourceRecords, null, 2)}
 `;
@@ -913,9 +1005,15 @@ ${JSON.stringify(titleSourceRecords, null, 2)}
             Final included records only
           </div>
 
-          <div className="text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
-            All included records carried into synthesis
-          </div>
+        <div className="text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
+  {detailedEvidenceRecords.length} records supplied to AI synthesis
+</div>
+          <div className="text-[10px] font-mono text-slate-600 bg-slate-100 px-2 py-1 rounded-md">
+  {introductionRecords.length} records available for introduction
+</div>
+          <div className="text-[10px] font-mono text-slate-600 bg-slate-100 px-2 py-1 rounded-md">
+  {includedRecords.length} records retained for citation/reference
+</div>
         </div>
 
         {/* Tab navigation */}

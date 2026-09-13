@@ -12,6 +12,88 @@ import StudyCharacteristicsTable from "./StudyCharacteristicsTable";
 
 const STRICT_SCREENING_THRESHOLD = 85;
 
+interface ParsedScreeningResult {
+  id: string;
+  score: number;
+  reason?: string;
+  exclusionReason?: ScreeningDecision["exclusionReason"];
+}
+
+const ALLOWED_EXCLUSION_REASONS = new Set<NonNullable<ScreeningDecision["exclusionReason"]>>([
+  "Secondary literature / Review paper",
+  "Out of scope / Keyword mismatch",
+  "Wrong population",
+  "Wrong intervention / exposure",
+  "Wrong comparator",
+  "Wrong outcome",
+  "Wrong study design",
+  "Not accessible / full text unavailable",
+  "Duplicate / non-original",
+  "Language barrier",
+  "Other",
+]);
+
+export const normalizeScreeningResults = (
+  text: string,
+  allowedIds: Set<string>
+): ParsedScreeningResult[] => {
+  const parsed = parseJSONLoose(text);
+  let candidates: unknown[] = [];
+
+  if (Array.isArray(parsed)) {
+    candidates = parsed;
+  } else if (parsed && typeof parsed === "object") {
+    const response = parsed as Record<string, unknown>;
+    const wrapped = ["results", "decisions", "screening", "studies", "data"]
+      .map((key) => response[key])
+      .find(Array.isArray);
+
+    if (Array.isArray(wrapped)) {
+      candidates = wrapped;
+    } else {
+      candidates = Object.entries(response)
+        .filter(([, value]) => value && typeof value === "object" && !Array.isArray(value))
+        .map(([id, value]) => ({ id, ...(value as Record<string, unknown>) }));
+    }
+  }
+
+  const normalized = new Map<string, ParsedScreeningResult>();
+  candidates.forEach((candidate) => {
+    if (!candidate || typeof candidate !== "object") return;
+    const item = candidate as Record<string, unknown>;
+    const id = String(item.id ?? item.recordId ?? item.record_id ?? "").trim();
+    const numericScore = typeof item.score === "number"
+      ? item.score
+      : Number.parseFloat(String(item.score ?? item.eligibilityScore ?? item.eligibility_score ?? ""));
+
+    if (!allowedIds.has(id) || !Number.isFinite(numericScore)) return;
+    const rawExclusionReason = typeof item.exclusionReason === "string"
+      ? item.exclusionReason
+      : typeof item.exclusion_reason === "string"
+        ? item.exclusion_reason
+        : undefined;
+    const exclusionReason = rawExclusionReason &&
+      ALLOWED_EXCLUSION_REASONS.has(rawExclusionReason as NonNullable<ScreeningDecision["exclusionReason"]>)
+        ? rawExclusionReason as NonNullable<ScreeningDecision["exclusionReason"]>
+        : rawExclusionReason
+          ? "Other"
+          : undefined;
+
+    normalized.set(id, {
+      id,
+      score: Math.max(0, Math.min(100, numericScore)),
+      reason: typeof item.reason === "string"
+        ? item.reason
+        : typeof item.justification === "string"
+          ? item.justification
+          : undefined,
+      exclusionReason,
+    });
+  });
+
+  return [...normalized.values()];
+};
+
 interface ScreeningSectionProps {
   records: SLRRecord[];
   dupesRemoved: number;
@@ -535,29 +617,52 @@ Return ONLY a JSON array:
 ]`;
 
         try {
-          const text = await callAI(
-            prompt,
-            "You are a medical librarian and PRISMA screening methodologist.",
-            configOverride || aiConfig,
-            1200
-          );
-          const parsed = parseJSONLoose(text);
-          if (!Array.isArray(parsed)) {
+          const recoveredResults = new Map<string, ParsedScreeningResult>();
+
+          for (let attempt = 0; attempt < 2 && recoveredResults.size < batch.length; attempt++) {
+            const missingRecords = batch.filter((record) => !recoveredResults.has(record.id));
+            const attemptPrompt = attempt === 0
+              ? prompt
+              : `${prompt}
+
+Your previous response could not be fully parsed. Return decisions for ONLY these missing record IDs:
+${JSON.stringify(missingRecords.map((record) => record.id))}
+Return one valid compact JSON array with no markdown, commentary, wrapper object, or trailing text. The id must exactly match a supplied record ID and score must be a JSON number.`;
+            const text = await callAI(
+              attemptPrompt,
+              "You are a medical librarian and PRISMA screening methodologist. Return strict JSON only.",
+              configOverride || aiConfig,
+              1200
+            );
+            normalizeScreeningResults(
+              text,
+              new Set(missingRecords.map((record) => record.id))
+            ).forEach((result) => recoveredResults.set(result.id, result));
+          }
+
+          if (recoveredResults.size === 0) {
             throw new Error("AI returned an invalid screening response.");
           }
-          parsed.forEach((p: any) => {
-              if (!batchIds.has(p.id)) return;
-              const finalScore = p.score ?? null;
-              const isInclude = finalScore !== null && finalScore >= effectiveThreshold;
 
-              nextScreening[p.id] = {
-                score: finalScore,
-                reason: p.reason || (isInclude ? "Meets PICO criteria and keyword match" : "Does not meet criteria"),
+          recoveredResults.forEach((result) => {
+              if (!batchIds.has(result.id)) return;
+              const isInclude = result.score >= effectiveThreshold;
+
+              nextScreening[result.id] = {
+                score: result.score,
+                reason: result.reason || (isInclude ? "Meets PICO criteria and keyword match" : "Does not meet criteria"),
                 decision: isInclude ? "include" : "exclude",
                 agreed: isInclude,
-                exclusionReason: !isInclude ? p.exclusionReason || "Wrong study design" : undefined,
+                exclusionReason: !isInclude ? result.exclusionReason || "Other" : undefined,
               };
-            });
+          });
+
+          if (recoveredResults.size < batch.length) {
+            const missingCount = batch.length - recoveredResults.size;
+            setErrorMessage(
+              `Batch ${b + 1} returned ${recoveredResults.size} valid decision${recoveredResults.size === 1 ? "" : "s"} after an automatic retry. ${missingCount} affected record${missingCount === 1 ? "" : "s"} remain unresolved and can be screened again.`
+            );
+          }
         } catch (err: any) {
           console.warn("AI screening batch error:", err);
           const remainingUnresolved = screeningPool.filter(

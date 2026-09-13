@@ -188,6 +188,7 @@ const buildTitleSourceRecords = (
       title: cleanText(record.title),
       authors: Array.isArray(record.authors) ? record.authors : [],
       year: cleanText(record.year),
+      abstract: cleanText(record.abstract),
     };
 
     if (characteristic) {

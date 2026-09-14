@@ -34,3 +34,8 @@ Phase 7 hardens the ChatGPT/MCP deployment path and adds a repeatable connection
 This service is an OAuth/JWT resource server. It does not issue access tokens. Configure an approved OIDC/OAuth provider and make sure its access tokens are RS256-signed with matching issuer, audience, subject, expiry, and JWKS values.
 
 Do not enable `ALLOW_ANONYMOUS_DEV` on a public deployment.
+
+
+### Restrict access to specific researchers
+
+Set `LITMATRIX_ALLOWED_EMAILS` to a comma-separated list of exact email addresses. If it is non-empty, only those authenticated email addresses can use the MCP server. Matching is case-insensitive.

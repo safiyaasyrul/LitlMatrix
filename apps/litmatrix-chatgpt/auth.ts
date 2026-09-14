@@ -10,6 +10,12 @@ const issuer = process.env.AUTH_ISSUER?.trim();
 const audience = process.env.AUTH_AUDIENCE?.trim();
 const jwksUrl = process.env.AUTH_JWKS_URL?.trim();
 const allowAnonymousDev = process.env.ALLOW_ANONYMOUS_DEV === "true";
+const allowedEmails = new Set(
+  (process.env.LITMATRIX_ALLOWED_EMAILS ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean),
+);
 let cachedJwks: { value: Jwks; expiresAt: number } | null = null;
 
 export function authConfigured() { return Boolean(issuer && jwksUrl); }
@@ -25,7 +31,12 @@ export async function authenticateRequest(req: Request): Promise<AuthUser> {
   const claims = await verifyJwt(token);
   const subject = typeof claims.sub === "string" ? claims.sub : "";
   if (!subject) throw new AuthError("Access token has no subject.");
-  return { subject, email: stringClaim(claims.email), name: stringClaim(claims.name) ?? stringClaim(claims.preferred_username) };
+  const email = stringClaim(claims.email)?.trim().toLowerCase();
+  if (allowedEmails.size > 0) {
+    if (!email) throw new AuthError("This account does not have an email address available for LitlMatrix access.");
+    if (!allowedEmails.has(email)) throw new AuthError("This email address is not authorized to use LitlMatrix.");
+  }
+  return { subject, email, name: stringClaim(claims.name) ?? stringClaim(claims.preferred_username) };
 }
 
 async function verifyJwt(token: string): Promise<Record<string, unknown>> {

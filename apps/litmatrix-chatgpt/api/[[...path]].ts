@@ -105,6 +105,17 @@ app.get("/openapi.json", (_req: Request, res: Response) => {
 
 app.use("/actions", createActionsRouter());
 
+// MCP OAuth challenge must be emitted at the HTTP boundary before authentication.
+// This guarantees that MCP clients can discover the Protected Resource Metadata URL from the 401 response.
+app.use("/mcp", (req: Request, res: Response, next: NextFunction) => {
+  if (!req.header("authorization")) {
+    const metadataUrl = `${req.protocol}://${req.get("host")}/.well-known/oauth-protected-resource/mcp`;
+    res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${metadataUrl}"`);
+    return res.status(401).json({ error: "unauthorized", message: "Authorization required." });
+  }
+  next();
+});
+
 app.all("/mcp", async (req: Request, res: Response) => {
   try {
     await ensureStorage();
@@ -120,8 +131,10 @@ app.all("/mcp", async (req: Request, res: Response) => {
   } catch (error) {
     if (error instanceof AuthError) {
       const metadataUrl = `${req.protocol}://${req.get("host")}/.well-known/oauth-protected-resource/mcp`;
-      res.setHeader("WWW-Authenticate", `Bearer resource_metadata=\"${metadataUrl}\"`);
-      if (!res.headersSent) res.status(401).json({ error: "unauthorized", message: error.message });
+      if (!res.headersSent) {
+        res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${metadataUrl}"`);
+        res.status(401).json({ error: "unauthorized", message: error.message });
+      }
       return;
     }
     console.error("MCP error:", error);

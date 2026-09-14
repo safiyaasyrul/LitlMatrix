@@ -12,7 +12,7 @@ const jwksUrl = process.env.AUTH_JWKS_URL?.trim();
 const allowAnonymousDev = process.env.ALLOW_ANONYMOUS_DEV === "true";
 let cachedJwks: { value: Jwks; expiresAt: number } | null = null;
 
-export function authConfigured() { return Boolean(issuer && audience && jwksUrl); }
+export function authConfigured() { return Boolean(issuer && jwksUrl); }
 
 export async function authenticateRequest(req: Request): Promise<AuthUser> {
   const header = req.header("authorization");
@@ -45,9 +45,11 @@ async function verifyJwt(token: string): Promise<Record<string, unknown>> {
   if (typeof claims.exp !== "number" || claims.exp <= now) throw new AuthError("Access token is expired.");
   if (typeof claims.nbf === "number" && claims.nbf > now + 60) throw new AuthError("Access token is not active yet.");
   if (claims.iss !== issuer) throw new AuthError("Invalid token issuer.");
-  const aud = claims.aud;
-  const validAudience = Array.isArray(aud) ? aud.includes(audience) : aud === audience;
-  if (!validAudience) throw new AuthError("Invalid token audience.");
+  if (audience) {
+    const aud = claims.aud;
+    const validAudience = Array.isArray(aud) ? aud.includes(audience) : aud === audience;
+    if (!validAudience) throw new AuthError("Invalid token audience.");
+  }
   return claims;
 }
 
@@ -72,6 +74,8 @@ export function oauthProtectedResourceMetadata(baseUrl: string) {
 }
 
 export function oauthAuthorizationServerMetadata() {
-  const authorizationServer = process.env.AUTH_AUTHORIZATION_SERVER?.trim() || issuer;
-  return { issuer: authorizationServer ?? "", authorization_endpoint: process.env.AUTH_AUTHORIZATION_ENDPOINT ?? "", token_endpoint: process.env.AUTH_TOKEN_ENDPOINT ?? "", response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"], code_challenge_methods_supported: ["S256"], scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email").split(/\s+/).filter(Boolean) };
+  const authorizationServer = process.env.AUTH_AUTHORIZATION_SERVER?.trim() || issuer || "";
+  const authorizationEndpoint = process.env.AUTH_AUTHORIZATION_ENDPOINT?.trim() || `${authorizationServer}/oauth/authorize`;
+  const tokenEndpoint = process.env.AUTH_TOKEN_ENDPOINT?.trim() || `${authorizationServer}/oauth/token`;
+  return { issuer: authorizationServer, authorization_endpoint: authorizationEndpoint, token_endpoint: tokenEndpoint, response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"], code_challenge_methods_supported: ["S256"], scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email").split(/\s+/).filter(Boolean) };
 }

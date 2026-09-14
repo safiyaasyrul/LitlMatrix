@@ -36,14 +36,14 @@ app.get("/healthz", async (_req: Request, res: Response) => {
   try {
     await ensureStorage();
     await pool.query("SELECT 1");
-    res.json({ ok: true, service: "litmatrix-mcp", version: "0.8.0", authConfigured: authConfigured(), databaseConfigured: true });
+    res.json({ ok: true, service: "litmatrix-mcp", version: "0.9.0", authConfigured: authConfigured(), databaseConfigured: true });
   } catch {
-    res.status(503).json({ ok: false, service: "litmatrix-mcp", version: "0.8.0", authConfigured: authConfigured(), databaseConfigured: Boolean(process.env.DATABASE_URL), databaseHealthy: false });
+    res.status(503).json({ ok: false, service: "litmatrix-mcp", version: "0.9.0", authConfigured: authConfigured(), databaseConfigured: Boolean(process.env.DATABASE_URL), databaseHealthy: false });
   }
 });
 
 app.get("/", (_req: Request, res: Response) => {
-  res.json({ service: "LitlMatrix MCP", version: "0.8.0", endpoint: "/mcp", health: "/healthz", authentication: "OAuth/JWT" });
+  res.json({ service: "LitlMatrix MCP", version: "0.9.0", endpoint: "/mcp", health: "/healthz", authentication: "OAuth/JWT" });
 });
 
 app.get("/.well-known/oauth-protected-resource", (req: Request, res: Response) => {

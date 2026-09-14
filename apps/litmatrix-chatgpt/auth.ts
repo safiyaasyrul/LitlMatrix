@@ -88,5 +88,5 @@ export function oauthAuthorizationServerMetadata() {
   const authorizationServer = process.env.AUTH_AUTHORIZATION_SERVER?.trim() || issuer || "";
   const authorizationEndpoint = process.env.AUTH_AUTHORIZATION_ENDPOINT?.trim() || `${authorizationServer}/oauth/authorize`;
   const tokenEndpoint = process.env.AUTH_TOKEN_ENDPOINT?.trim() || `${authorizationServer}/oauth/token`;
-  return { issuer: authorizationServer, authorization_endpoint: authorizationEndpoint, token_endpoint: tokenEndpoint, response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"], code_challenge_methods_supported: ["S256"], scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email").split(/\s+/).filter(Boolean) };
+  return { issuer: authorizationServer, authorization_endpoint: authorizationEndpoint, token_endpoint: tokenEndpoint, response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"], code_challenge_methods_supported: ["S256"], client_id_metadata_document_supported: true, scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email").split(/\s+/).filter(Boolean) };
 }

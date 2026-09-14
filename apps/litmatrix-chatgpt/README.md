@@ -39,3 +39,11 @@ Do not enable `ALLOW_ANONYMOUS_DEV` on a public deployment.
 ### Restrict access to specific researchers
 
 Set `LITMATRIX_ALLOWED_EMAILS` to a comma-separated list of exact email addresses. If it is non-empty, only those authenticated email addresses can use the MCP server. Matching is case-insensitive.
+
+## GPT Actions
+
+For a custom GPT, use the GPT Actions REST layer. Import this OpenAPI schema in the GPT editor:
+
+`https://litl-matrix-api-server-bpjcqoa9q-wannurdiyana-5641s-projects.vercel.app/openapi.json`
+
+See `GPT-ACTIONS-SETUP.md` for OAuth and Clerk setup.

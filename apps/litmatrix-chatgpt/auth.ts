@@ -84,9 +84,42 @@ export function oauthProtectedResourceMetadata(baseUrl: string) {
   return { resource: baseUrl, authorization_servers: authorizationServer ? [authorizationServer] : [], scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email").split(/\s+/).filter(Boolean), bearer_methods_supported: ["header"] };
 }
 
-export function oauthAuthorizationServerMetadata() {
+export async function oauthAuthorizationServerMetadata() {
   const authorizationServer = process.env.AUTH_AUTHORIZATION_SERVER?.trim() || issuer || "";
   const authorizationEndpoint = process.env.AUTH_AUTHORIZATION_ENDPOINT?.trim() || `${authorizationServer}/oauth/authorize`;
   const tokenEndpoint = process.env.AUTH_TOKEN_ENDPOINT?.trim() || `${authorizationServer}/oauth/token`;
-  return { issuer: authorizationServer, authorization_endpoint: authorizationEndpoint, token_endpoint: tokenEndpoint, response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"], code_challenge_methods_supported: ["S256"], client_id_metadata_document_supported: true, scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email").split(/\s+/).filter(Boolean) };
+  const fallback = {
+    issuer: authorizationServer,
+    authorization_endpoint: authorizationEndpoint,
+    token_endpoint: tokenEndpoint,
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
+    token_endpoint_auth_methods_supported: ["none", "client_secret_basic", "client_secret_post"],
+    code_challenge_methods_supported: ["S256"],
+    scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email").split(/\s+/).filter(Boolean),
+  };
+
+  // Prefer Clerk's live authorization-server metadata. This prevents our MCP
+  // server from becoming stale when Clerk changes OAuth capabilities and, most
+  // importantly, ensures clients can discover PKCE S256 directly from Clerk.
+  if (!authorizationServer) return fallback;
+  try {
+    const response = await fetch(`${authorizationServer.replace(/\/$/, "")}/.well-known/oauth-authorization-server`, {
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return fallback;
+    const metadata = await response.json() as Record<string, unknown>;
+    const methods = Array.isArray(metadata.code_challenge_methods_supported)
+      ? metadata.code_challenge_methods_supported.filter((value): value is string => typeof value === "string")
+      : [];
+    // ChatGPT requires an explicit S256 declaration for PKCE. Never pass through
+    // incomplete upstream metadata without guaranteeing that declaration.
+    return {
+      ...fallback,
+      ...metadata,
+      code_challenge_methods_supported: methods.includes("S256") ? methods : ["S256", ...methods],
+    };
+  } catch {
+    return fallback;
+  }
 }

@@ -68,8 +68,12 @@ app.get("/.well-known/oauth-protected-resource/mcp", (req: Request, res: Respons
   const baseUrl = `${req.protocol}://${req.get("host")}/mcp`;
   res.json(oauthProtectedResourceMetadata(baseUrl));
 });
-app.get("/.well-known/oauth-authorization-server", (_req: Request, res: Response) => {
-  res.json(oauthAuthorizationServerMetadata());
+app.get("/.well-known/oauth-authorization-server", async (_req: Request, res: Response) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "*");
+  res.setHeader("Cache-Control", "public, max-age=300");
+  res.json(await oauthAuthorizationServerMetadata());
 });
 
 app.get("/openapi.json", (_req: Request, res: Response) => {

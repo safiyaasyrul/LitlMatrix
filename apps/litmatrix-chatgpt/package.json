@@ -21,9 +21,7 @@
     "cors": "^2.8.5",
     "express": "^5.2.1",
     "zod": "^4.2.0",
-    "pg": "^8.22.0",
-    "@clerk/mcp-tools": "^0.6.0",
-    "@clerk/express": "^2.1.67"
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

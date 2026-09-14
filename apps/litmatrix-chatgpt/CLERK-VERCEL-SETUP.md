@@ -46,7 +46,3 @@ researcher1@umt.edu.my,researcher2@umt.edu.my
 Email matching is case-insensitive and whitespace is ignored. When this variable contains one or more addresses, an authenticated user must have an `email` claim in the access token and that exact normalized address must be present in the allowlist. Users who are not on the list receive HTTP 401. Leave the variable empty only if you intentionally want any authenticated Clerk user to access the service.
 
 For Vercel, add `LITMATRIX_ALLOWED_EMAILS` under Production and Preview. Do not put secrets or passwords in this variable.
-
-
-### MCP OAuth discovery
-The MCP server uses Clerk's official `@clerk/mcp-tools` discovery handlers. Add the Clerk publishable key as the Vercel environment variable `CLERK_PUBLISHABLE_KEY`. This key is publishable (not a secret) and is used only by Clerk's metadata helper. Keep the existing `AUTH_*` variables and `LITMATRIX_ALLOWED_EMAILS` unchanged.

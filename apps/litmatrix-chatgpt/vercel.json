@@ -5,9 +5,18 @@
   "rewrites": [
     { "source": "/healthz", "destination": "/api/healthz" },
     { "source": "/mcp", "destination": "/api/mcp" },
-    { "source": "/.well-known/oauth-protected-resource/mcp", "destination": "/api/.well-known/oauth-protected-resource/mcp" },
     { "source": "/.well-known/oauth-protected-resource", "destination": "/api/.well-known/oauth-protected-resource" },
     { "source": "/.well-known/oauth-authorization-server", "destination": "/api/.well-known/oauth-authorization-server" }
+  ],
+  "headers": [
+    {
+      "source": "/.well-known/oauth-protected-resource/mcp",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Cache-Control", "value": "public, max-age=300" },
+        { "key": "Content-Type", "value": "application/json" }
+      ]
+    }
   ],
   "$schema": "https://openapi.vercel.sh/vercel.json"
 }

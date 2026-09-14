@@ -1,0 +1,7 @@
+{
+  "resource": "https://litl-matrix-api-server.vercel.app/mcp",
+  "authorization_servers": [
+    "https://loyal-gelding-9175.clerk.accounts.dev"
+  ],
+  "scopes_supported": ["openid", "profile", "email"]
+}

@@ -2,15 +2,11 @@ import { createMcpExpressApp } from "@modelcontextprotocol/express";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import cors from "cors";
 import type { Request, Response, NextFunction } from "express";
-import { authenticateRequest, AuthError, authConfigured, oauthProtectedResourceMetadata } from "../auth.js";
+import { authenticateRequest, AuthError, authConfigured, oauthAuthorizationServerMetadata, oauthProtectedResourceMetadata } from "../auth.js";
 import { initStorage, deleteExpiredReviews, pool } from "../storage.js";
 import { createServer } from "../server.js";
 import { createActionsRouter } from "../actions.js";
 import express from "express";
-import {
-  authServerMetadataHandlerClerk,
-  protectedResourceHandlerClerk,
-} from "@clerk/mcp-tools/express";
 
 let initPromise: Promise<void> | undefined;
 function ensureStorage() {
@@ -64,17 +60,17 @@ app.get("/", (_req: Request, res: Response) => {
   res.json({ service: "LitlMatrix MCP", version: "0.9.0", endpoint: "/mcp", health: "/healthz", authentication: "OAuth/JWT" });
 });
 
-// Clerk's current MCP helpers provide the OAuth discovery metadata expected by MCP clients.
-// Keep the generic root metadata route for older clients, and use Clerk's official
-// resource-specific route for the current MCP authorization discovery flow.
-app.get("/.well-known/oauth-protected-resource/mcp", protectedResourceHandlerClerk({
-  scopes_supported: ["openid", "profile", "email"],
-}));
 app.get("/.well-known/oauth-protected-resource", (req: Request, res: Response) => {
   const baseUrl = `${req.protocol}://${req.get("host")}/mcp`;
   res.json(oauthProtectedResourceMetadata(baseUrl));
 });
-app.get("/.well-known/oauth-authorization-server", authServerMetadataHandlerClerk);
+app.get("/.well-known/oauth-protected-resource/mcp", (req: Request, res: Response) => {
+  const baseUrl = `${req.protocol}://${req.get("host")}/mcp`;
+  res.json(oauthProtectedResourceMetadata(baseUrl));
+});
+app.get("/.well-known/oauth-authorization-server", (_req: Request, res: Response) => {
+  res.json(oauthAuthorizationServerMetadata());
+});
 
 app.get("/openapi.json", (_req: Request, res: Response) => {
   res.json({

@@ -120,9 +120,9 @@ export function createServer(owner: AuthUser): McpServer {
     }),
   }, async ({ reviewId, records, characteristics, protocol }) => {
     const review = await getReview(reviewId, owner);
-    const normalized = records.map(normalizeRecord).filter((record) => String(record.title ?? "").trim());
+    const normalized = records.map(normalizeRecord).filter((record: RecordData) => String(record.title ?? "").trim());
     const seen = new Set<string>();
-    review.records = normalized.filter((record) => {
+    review.records = normalized.filter((record: RecordData) => {
       const key = String(record.doi ?? "").trim().toLowerCase() || `${String(record.title).trim().toLowerCase()}|${String(record.year ?? "").trim()}`;
       if (seen.has(key)) return false;
       seen.add(key);
@@ -144,7 +144,7 @@ export function createServer(owner: AuthUser): McpServer {
     inputSchema: z.object({ reviewId: z.string(), terms: z.array(z.string()).max(50) }),
   }, async ({ reviewId, terms }) => {
     const review = await getReview(reviewId, owner);
-    review.criteria = terms.map((term) => term.trim()).filter(Boolean);
+    review.criteria = terms.map((term: string) => term.trim()).filter(Boolean);
     await persistReview(reviewId, review, owner);
     return { content: [{ type: "text", text: `Stored ${review.criteria.length} review criteria.` }], structuredContent: { reviewId, criteria: review.criteria } };
   });
@@ -203,7 +203,7 @@ export function createServer(owner: AuthUser): McpServer {
   }, async ({ reviewId, decisions }) => {
     const review = await getReview(reviewId, owner);
     const allowedIds = new Set(review.records.map((r) => String(r.id)));
-    const accepted = decisions.filter((d) => allowedIds.has(d.id));
+    const accepted = decisions.filter((d: { id: string }) => allowedIds.has(d.id));
     const existing = new Map(review.decisions.map((d) => [String(d.id), d]));
     for (const decision of accepted) existing.set(decision.id, { ...decision, decision: decision.decision ?? (decision.score >= 50 ? "include" : "exclude") });
     review.decisions = [...existing.values()];
@@ -240,7 +240,7 @@ export function createServer(owner: AuthUser): McpServer {
   }, async ({ reviewId, characteristics }) => {
     const review = await getReview(reviewId, owner);
     const allowedIds = new Set(review.records.map((r) => String(r.id)));
-    const accepted = characteristics.filter((c) => allowedIds.has(String(c.recordId ?? c.id ?? "")));
+    const accepted = characteristics.filter((c: CharacteristicData) => allowedIds.has(String(c.recordId ?? c.id ?? "")));
     const existing = new Map(review.characteristics.map((c) => [String(c.recordId ?? c.id), c]));
     for (const characteristic of accepted) existing.set(String(characteristic.recordId ?? characteristic.id), characteristic);
     review.characteristics = [...existing.values()];

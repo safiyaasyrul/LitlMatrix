@@ -21,7 +21,7 @@ async function startHttp() {
     allowedHeaders: ["Content-Type", "Authorization", "Mcp-Session-Id", "Last-Event-ID"],
     exposedHeaders: ["WWW-Authenticate", "Mcp-Session-Id"],
   }));
-  app.use((req, res, next) => {
+  app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("Cache-Control", "no-store");

@@ -12,6 +12,30 @@ import { selectDetailedRecords, selectIntroductionRecords } from "./evidence.js"
 const DIST_DIR = path.join(import.meta.dirname, "dist");
 const RESOURCE_URI = "ui://litmatrix/review-dashboard.html";
 
+/**
+ * Compatibility wrapper for the MCP Apps v2 tool-registration typings.
+ * LitlMatrix currently uses Zod schemas (`z.object(...)`) throughout its
+ * tool definitions. The current ext-apps helper also requires `_meta` on
+ * every app tool. This wrapper supplies the shared UI resource metadata and
+ * bridges the schema typing without changing runtime validation.
+ */
+function registerLitmatrixAppTool(
+  server: McpServer,
+  name: string,
+  config: Record<string, unknown>,
+  callback: (...args: any[]) => any,
+) {
+  return (registerAppTool as any)(
+    server,
+    name,
+    {
+      ...config,
+      _meta: config._meta ?? { ui: { resourceUri: RESOURCE_URI } },
+    },
+    callback,
+  );
+}
+
 // Phase 6: review state is persisted in PostgreSQL and scoped to the authenticated user.
 type RecordData = Record<string, unknown>;
 type CharacteristicData = Record<string, unknown>;
@@ -60,7 +84,7 @@ function normalizeRecord(record: RecordData, index: number): RecordData {
 export function createServer(owner: AuthUser): McpServer {
   const server = new McpServer({ name: "LitlMatrix", version: "0.9.0" });
 
-  registerAppTool(server, "litmatrix_start_review", {
+  registerLitmatrixAppTool(server, "litmatrix_start_review", {
     title: "Start LitlMatrix Review",
     description: "Create a LitlMatrix systematic review workspace. The ChatGPT host performs AI reasoning; LitlMatrix stores and bounds the researcher-supplied evidence.",
     inputSchema: z.object({
@@ -85,7 +109,7 @@ export function createServer(owner: AuthUser): McpServer {
     };
   });
 
-  registerAppTool(server, "litmatrix_import_records", {
+  registerLitmatrixAppTool(server, "litmatrix_import_records", {
     title: "Import Review Records",
     description: "Store only citation records supplied by the researcher. No external literature is added. The review supports up to 200 records in the evidence workflow.",
     inputSchema: z.object({
@@ -114,7 +138,7 @@ export function createServer(owner: AuthUser): McpServer {
     };
   });
 
-  registerAppTool(server, "litmatrix_set_criteria", {
+  registerLitmatrixAppTool(server, "litmatrix_set_criteria", {
     title: "Set Review Criteria",
     description: "Store review terms supplied by the researcher. They are used for deterministic local evidence selection only.",
     inputSchema: z.object({ reviewId: z.string(), terms: z.array(z.string()).max(50) }),
@@ -125,7 +149,7 @@ export function createServer(owner: AuthUser): McpServer {
     return { content: [{ type: "text", text: `Stored ${review.criteria.length} review criteria.` }], structuredContent: { reviewId, criteria: review.criteria } };
   });
 
-  registerAppTool(server, "litmatrix_select_evidence", {
+  registerLitmatrixAppTool(server, "litmatrix_select_evidence", {
     title: "Select Evidence Locally",
     description: "Deterministically select up to 100 title-relevant records, then up to 50 detailed evidence records. This tool never calls an AI provider and never adds external records.",
     inputSchema: z.object({ reviewId: z.string() }),
@@ -148,7 +172,7 @@ export function createServer(owner: AuthUser): McpServer {
     };
   });
 
-  registerAppTool(server, "litmatrix_get_screening_batch", {
+  registerLitmatrixAppTool(server, "litmatrix_get_screening_batch", {
     title: "Get Screening Batch",
     description: "Return up to four unresolved records for title/abstract screening. Decisions must use only the supplied record data and review criteria.",
     inputSchema: z.object({ reviewId: z.string(), limit: z.number().int().min(1).max(4).default(4) }),
@@ -163,7 +187,7 @@ export function createServer(owner: AuthUser): McpServer {
     };
   });
 
-  registerAppTool(server, "litmatrix_save_screening_decisions", {
+  registerLitmatrixAppTool(server, "litmatrix_save_screening_decisions", {
     title: "Save Screening Decisions",
     description: "Persist screening decisions only for record IDs previously supplied by the researcher.",
     inputSchema: z.object({
@@ -190,7 +214,7 @@ export function createServer(owner: AuthUser): McpServer {
     };
   });
 
-  registerAppTool(server, "litmatrix_get_synthesis_evidence", {
+  registerLitmatrixAppTool(server, "litmatrix_get_synthesis_evidence", {
     title: "Get Synthesis Evidence",
     description: "Return the bounded evidence set for a manuscript section. Introduction uses up to 100 records; title, results, characteristics, synthesis, and discussion use up to 50 detailed records. Use only researcher-supplied records.",
     inputSchema: z.object({ reviewId: z.string(), section: z.enum(["introduction", "title", "results", "characteristics", "synthesis", "discussion"]) }),
@@ -206,7 +230,7 @@ export function createServer(owner: AuthUser): McpServer {
     };
   });
 
-  registerAppTool(server, "litmatrix_save_characteristics", {
+  registerLitmatrixAppTool(server, "litmatrix_save_characteristics", {
     title: "Save Study Characteristics",
     description: "Persist structured study characteristics only for imported record IDs. Use only information supported by the supplied records; do not add outside studies.",
     inputSchema: z.object({
@@ -227,7 +251,7 @@ export function createServer(owner: AuthUser): McpServer {
     };
   });
 
-  registerAppTool(server, "litmatrix_get_manuscript_package", {
+  registerLitmatrixAppTool(server, "litmatrix_get_manuscript_package", {
     title: "Get Manuscript Evidence Package",
     description: "Return the complete researcher-supplied record universe metadata plus bounded section evidence. This package is for evidence-grounded manuscript drafting and must not be supplemented with external literature.",
     inputSchema: z.object({ reviewId: z.string() }),
@@ -263,7 +287,7 @@ export function createServer(owner: AuthUser): McpServer {
     };
   });
 
-  registerAppTool(server, "litmatrix_next_workflow_action", {
+  registerLitmatrixAppTool(server, "litmatrix_next_workflow_action", {
     title: "Get Next LitlMatrix Workflow Action",
     description: "Return the next evidence-grounded action for the review. The host should follow this sequence without adding external literature.",
     inputSchema: z.object({ reviewId: z.string() }),
@@ -294,7 +318,7 @@ export function createServer(owner: AuthUser): McpServer {
     };
   });
 
-  registerAppTool(server, "litmatrix_status", {
+  registerLitmatrixAppTool(server, "litmatrix_status", {
     title: "LitlMatrix Status",
     description: "Return the current record, screening, and evidence-budget counts for a LitlMatrix review.",
     inputSchema: z.object({ reviewId: z.string() }),

@@ -2,12 +2,6 @@
   "version": 2,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "functions": {
-    "api/index.ts": {
-      "runtime": "nodejs20.x",
-      "includeFiles": "dist/**"
-    }
-  },
   "rewrites": [
     {
       "source": "/mcp",
@@ -25,5 +19,6 @@
       "source": "/.well-known/oauth-authorization-server",
       "destination": "/api/.well-known/oauth-authorization-server"
     }
-  ]
+  ],
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }

@@ -15,6 +15,16 @@ function ensureStorage() {
 }
 
 const app = createMcpExpressApp({ host: "0.0.0.0" });
+
+// Vercel invokes this file through the /api serverless function.
+// Normalize the function prefix so Express routes remain /, /healthz, /mcp, and /.well-known/*
+// regardless of whether the request arrived directly at /api/* or through a Vercel rewrite.
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  if (req.url === "/api" || req.url.startsWith("/api/")) {
+    req.url = req.url.slice(4) || "/";
+  }
+  next();
+});
 const allowedOrigins = (process.env.ALLOWED_ORIGIN ?? "").split(",").map((value) => value.trim()).filter(Boolean);
 app.use(cors({
   origin: allowedOrigins.length ? allowedOrigins : false,

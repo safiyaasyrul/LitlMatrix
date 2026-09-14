@@ -3,10 +3,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api"
-    }
+    { "source": "/healthz", "destination": "/api/healthz" },
+    { "source": "/mcp", "destination": "/api/mcp" },
+    { "source": "/.well-known/oauth-protected-resource", "destination": "/api/.well-known/oauth-protected-resource" },
+    { "source": "/.well-known/oauth-authorization-server", "destination": "/api/.well-known/oauth-authorization-server" }
   ],
   "$schema": "https://openapi.vercel.sh/vercel.json"
 }

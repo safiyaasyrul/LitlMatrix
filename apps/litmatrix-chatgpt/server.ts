@@ -319,7 +319,7 @@ export function createServer(owner: AuthUser): McpServer {
   });
 
   registerAppResource(server, RESOURCE_URI, RESOURCE_URI, { mimeType: RESOURCE_MIME_TYPE }, async () => {
-    const html = await fs.readFile(path.join(DIST_DIR, "review-dashboard.html"), "utf-8");
+    const html = await fs.readFile(path.join(DIST_DIR, "mcp-app.html"), "utf-8");
     return { contents: [{ uri: RESOURCE_URI, mimeType: RESOURCE_MIME_TYPE, text: html }] };
   });
 

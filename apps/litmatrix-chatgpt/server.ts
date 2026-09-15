@@ -82,7 +82,7 @@ function normalizeRecord(record: RecordData, index: number): RecordData {
 }
 
 export function createServer(owner: AuthUser): McpServer {
-  const server = new McpServer({ name: "LitlMatrix", version: "0.9.0" });
+  const server = new McpServer({ name: "LitlMatrix", version: "0.9.1" });
 
   registerLitmatrixAppTool(server, "litmatrix_start_review", {
     title: "Start LitlMatrix Review",

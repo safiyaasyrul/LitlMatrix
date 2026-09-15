@@ -12,7 +12,8 @@ Add these to **Production** and **Preview**:
 - `AUTH_AUTHORIZATION_SERVER` = `https://YOUR-CLERK-DOMAIN.clerk.accounts.dev`
 - `AUTH_AUTHORIZATION_ENDPOINT` = `https://YOUR-CLERK-DOMAIN.clerk.accounts.dev/oauth/authorize`
 - `AUTH_TOKEN_ENDPOINT` = `https://YOUR-CLERK-DOMAIN.clerk.accounts.dev/oauth/token`
-- `AUTH_SCOPES` = `openid profile email`
+- `AUTH_SCOPES` = `openid profile email offline_access`
+- `PUBLIC_MCP_BASE_URL` = `https://litl-matrix-api-server.vercel.app`
 - `ALLOW_ANONYMOUS_DEV` = `false`
 - `ALLOWED_ORIGIN` = your public Vercel origin (for example `https://litmatrix-chatgpt.vercel.app`)
 
@@ -46,3 +47,7 @@ researcher1@umt.edu.my,researcher2@umt.edu.my
 Email matching is case-insensitive and whitespace is ignored. When this variable contains one or more addresses, an authenticated user must have an `email` claim in the access token and that exact normalized address must be present in the allowlist. Users who are not on the list receive HTTP 401. Leave the variable empty only if you intentionally want any authenticated Clerk user to access the service.
 
 For Vercel, add `LITMATRIX_ALLOWED_EMAILS` under Production and Preview. Do not put secrets or passwords in this variable.
+
+## OAuth facade for ChatGPT MCP
+
+LitlMatrix exposes an RFC 8414 authorization-server facade on its own production origin. The facade advertises `code_challenge_methods_supported: ["S256"]` and proxies `/oauth/authorize`, `/oauth/token`, `/oauth/register`, and `/oauth/revoke` to the Clerk authorization service. This keeps the issuer and discovery metadata on the same origin, while Clerk remains the identity and OAuth provider.

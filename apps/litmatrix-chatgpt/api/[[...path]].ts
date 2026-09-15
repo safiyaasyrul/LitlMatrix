@@ -29,6 +29,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 });
 const allowedOrigins = (process.env.ALLOWED_ORIGIN ?? "").split(",").map((value) => value.trim()).filter(Boolean);
 app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 
 app.use(cors({
   origin: allowedOrigins.length ? allowedOrigins : false,
@@ -50,31 +51,166 @@ app.get("/healthz", async (_req: Request, res: Response) => {
   try {
     await ensureStorage();
     await pool.query("SELECT 1");
-    res.json({ ok: true, service: "litmatrix-mcp", version: "0.9.0", authConfigured: authConfigured(), databaseConfigured: true });
+    res.json({ ok: true, service: "litmatrix-mcp", version: "0.9.1", authConfigured: authConfigured(), databaseConfigured: true });
   } catch {
-    res.status(503).json({ ok: false, service: "litmatrix-mcp", version: "0.9.0", authConfigured: authConfigured(), databaseConfigured: Boolean(process.env.DATABASE_URL), databaseHealthy: false });
+    res.status(503).json({ ok: false, service: "litmatrix-mcp", version: "0.9.1", authConfigured: authConfigured(), databaseConfigured: Boolean(process.env.DATABASE_URL), databaseHealthy: false });
   }
 });
 
 app.get("/", (_req: Request, res: Response) => {
-  res.json({ service: "LitlMatrix MCP", version: "0.9.0", endpoint: "/mcp", health: "/healthz", authentication: "OAuth/JWT" });
+  res.json({ service: "LitlMatrix MCP", version: "0.9.1", endpoint: "/mcp", health: "/healthz", authentication: "OAuth/JWT" });
 });
 
-app.get("/.well-known/oauth-protected-resource", (req: Request, res: Response) => {
-  const baseUrl = `${req.protocol}://${req.get("host")}/mcp`;
-  res.json(oauthProtectedResourceMetadata(baseUrl));
-});
-app.get("/.well-known/oauth-protected-resource/mcp", (req: Request, res: Response) => {
-  const baseUrl = `${req.protocol}://${req.get("host")}/mcp`;
-  res.json(oauthProtectedResourceMetadata(baseUrl));
-});
-app.get("/.well-known/oauth-authorization-server", async (_req: Request, res: Response) => {
+function publicBaseUrl(req: Request) {
+  const configured = process.env.PUBLIC_MCP_BASE_URL?.trim().replace(/\/$/, "");
+  return configured || `${req.protocol}://${req.get("host")}`;
+}
+
+function clerkBaseUrl() {
+  return (process.env.AUTH_AUTHORIZATION_SERVER?.trim() || process.env.AUTH_ISSUER?.trim() || "").replace(/\/$/, "");
+}
+
+function applyMetadataCors(res: Response) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "*");
+  res.setHeader("Access-Control-Max-Age", "86400");
   res.setHeader("Cache-Control", "public, max-age=300");
-  res.json(await oauthAuthorizationServerMetadata());
+  res.type("application/json");
+}
+
+app.options("/.well-known/oauth-protected-resource", (_req: Request, res: Response) => {
+  applyMetadataCors(res);
+  res.status(204).end();
 });
+app.options("/.well-known/oauth-protected-resource/mcp", (_req: Request, res: Response) => {
+  applyMetadataCors(res);
+  res.status(204).end();
+});
+app.options("/.well-known/oauth-authorization-server", (_req: Request, res: Response) => {
+  applyMetadataCors(res);
+  res.status(204).end();
+});
+
+app.get("/.well-known/oauth-protected-resource", (req: Request, res: Response) => {
+  applyMetadataCors(res);
+  const baseUrl = `${publicBaseUrl(req)}/mcp`;
+  res.json({
+    resource: baseUrl,
+    authorization_servers: [publicBaseUrl(req)],
+    scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email offline_access").split(/\s+/).filter(Boolean),
+    bearer_methods_supported: ["header"],
+  });
+});
+app.get("/.well-known/oauth-protected-resource/mcp", (req: Request, res: Response) => {
+  applyMetadataCors(res);
+  const baseUrl = `${publicBaseUrl(req)}/mcp`;
+  res.json({
+    resource: baseUrl,
+    authorization_servers: [publicBaseUrl(req)],
+    scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email offline_access").split(/\s+/).filter(Boolean),
+    bearer_methods_supported: ["header"],
+  });
+});
+
+// ChatGPT and some MCP clients validate RFC 8414 metadata against the issuer URL.
+// We therefore expose LitlMatrix as a standards-compliant authorization-server
+// facade and proxy the OAuth operations to Clerk. This keeps issuer and metadata
+// on the same origin while Clerk remains the actual OAuth identity provider.
+app.get("/.well-known/oauth-authorization-server", (req: Request, res: Response) => {
+  applyMetadataCors(res);
+  const baseUrl = publicBaseUrl(req);
+  const clerk = clerkBaseUrl();
+  res.json({
+    issuer: baseUrl,
+    authorization_endpoint: `${baseUrl}/oauth/authorize`,
+    token_endpoint: `${baseUrl}/oauth/token`,
+    registration_endpoint: `${baseUrl}/oauth/register`,
+    revocation_endpoint: `${baseUrl}/oauth/revoke`,
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
+    token_endpoint_auth_methods_supported: ["none", "client_secret_basic", "client_secret_post"],
+    code_challenge_methods_supported: ["S256"],
+    scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email offline_access").split(/\s+/).filter(Boolean),
+    service_documentation: "https://clerk.com/docs/guides/ai/mcp/build-mcp-server",
+    // The facade delegates all actual OAuth operations to Clerk.
+    authorization_service: clerk,
+  });
+});
+
+function applyOAuthCors(res: Response) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
+app.options("/oauth/authorize", (_req: Request, res: Response) => { applyOAuthCors(res); res.status(204).end(); });
+app.options("/oauth/token", (_req: Request, res: Response) => { applyOAuthCors(res); res.status(204).end(); });
+app.options("/oauth/register", (_req: Request, res: Response) => { applyOAuthCors(res); res.status(204).end(); });
+app.options("/oauth/revoke", (_req: Request, res: Response) => { applyOAuthCors(res); res.status(204).end(); });
+
+function proxyUrl(pathname: string) {
+  const base = clerkBaseUrl();
+  if (!base) throw new Error("AUTH_AUTHORIZATION_SERVER is not configured.");
+  return `${base}${pathname}`;
+}
+
+app.get("/oauth/authorize", (req: Request, res: Response) => {
+  applyOAuthCors(res);
+  try {
+    const target = new URL(proxyUrl("/oauth/authorize"));
+    for (const [key, value] of Object.entries(req.query)) {
+      if (Array.isArray(value)) value.forEach((item) => target.searchParams.append(key, String(item)));
+      else if (value != null) target.searchParams.set(key, String(value));
+    }
+    res.redirect(302, target.toString());
+  } catch (error) {
+    console.error("OAuth authorize proxy error:", error);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+async function proxyOAuthRequest(req: Request, res: Response, pathname: string) {
+  applyOAuthCors(res);
+  try {
+    const contentType = req.header("content-type") || "application/x-www-form-urlencoded";
+    let body: string | undefined;
+    if (contentType.includes("application/x-www-form-urlencoded")) {
+      body = new URLSearchParams(
+        Object.entries((req.body ?? {}) as Record<string, unknown>).flatMap(([key, value]) =>
+          Array.isArray(value) ? value.map((item) => [key, String(item)] as const) : [[key, String(value ?? "")]] as const,
+        ),
+      ).toString();
+    } else if (req.body !== undefined) {
+      body = JSON.stringify(req.body);
+    }
+    const upstream = await fetch(proxyUrl(pathname), {
+      method: req.method,
+      headers: {
+        "content-type": contentType,
+        ...(req.header("authorization") ? { authorization: req.header("authorization")! } : {}),
+        accept: req.header("accept") || "application/json",
+      },
+      body,
+      redirect: "manual",
+    });
+    const responseBody = await upstream.arrayBuffer();
+    const responseType = upstream.headers.get("content-type");
+    if (responseType) res.setHeader("Content-Type", responseType);
+    const cacheControl = upstream.headers.get("cache-control");
+    if (cacheControl) res.setHeader("Cache-Control", cacheControl);
+    const location = upstream.headers.get("location");
+    if (location) res.setHeader("Location", location);
+    return res.status(upstream.status).send(Buffer.from(responseBody));
+  } catch (error) {
+    console.error(`OAuth ${pathname} proxy error:`, error);
+    return res.status(502).json({ error: "bad_gateway", error_description: "Unable to reach the OAuth authorization service." });
+  }
+}
+
+app.post("/oauth/token", (req: Request, res: Response) => proxyOAuthRequest(req, res, "/oauth/token"));
+app.post("/oauth/register", (req: Request, res: Response) => proxyOAuthRequest(req, res, "/oauth/register"));
+app.post("/oauth/revoke", (req: Request, res: Response) => proxyOAuthRequest(req, res, "/oauth/token/revoke"));
 
 app.get("/openapi.json", (_req: Request, res: Response) => {
   res.json({

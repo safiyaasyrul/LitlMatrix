@@ -51,14 +51,14 @@ app.get("/healthz", async (_req: Request, res: Response) => {
   try {
     await ensureStorage();
     await pool.query("SELECT 1");
-    res.json({ ok: true, service: "litmatrix-mcp", version: "0.9.1", authConfigured: authConfigured(), databaseConfigured: true });
+    res.json({ ok: true, service: "litmatrix-mcp", version: "0.9.2", authConfigured: authConfigured(), databaseConfigured: true });
   } catch {
-    res.status(503).json({ ok: false, service: "litmatrix-mcp", version: "0.9.1", authConfigured: authConfigured(), databaseConfigured: Boolean(process.env.DATABASE_URL), databaseHealthy: false });
+    res.status(503).json({ ok: false, service: "litmatrix-mcp", version: "0.9.2", authConfigured: authConfigured(), databaseConfigured: Boolean(process.env.DATABASE_URL), databaseHealthy: false });
   }
 });
 
 app.get("/", (_req: Request, res: Response) => {
-  res.json({ service: "LitlMatrix MCP", version: "0.9.1", endpoint: "/mcp", health: "/healthz", authentication: "OAuth/JWT" });
+  res.json({ service: "LitlMatrix MCP", version: "0.9.2", endpoint: "/mcp", health: "/healthz", authentication: "OAuth/JWT" });
 });
 
 function publicBaseUrl(req: Request) {
@@ -95,9 +95,10 @@ app.options("/.well-known/oauth-authorization-server", (_req: Request, res: Resp
 app.get("/.well-known/oauth-protected-resource", (req: Request, res: Response) => {
   applyMetadataCors(res);
   const baseUrl = `${publicBaseUrl(req)}/mcp`;
+  const authorizationServer = clerkBaseUrl() || publicBaseUrl(req);
   res.json({
     resource: baseUrl,
-    authorization_servers: [publicBaseUrl(req)],
+    authorization_servers: [authorizationServer],
     scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email offline_access").split(/\s+/).filter(Boolean),
     bearer_methods_supported: ["header"],
   });
@@ -105,9 +106,10 @@ app.get("/.well-known/oauth-protected-resource", (req: Request, res: Response) =
 app.get("/.well-known/oauth-protected-resource/mcp", (req: Request, res: Response) => {
   applyMetadataCors(res);
   const baseUrl = `${publicBaseUrl(req)}/mcp`;
+  const authorizationServer = clerkBaseUrl() || publicBaseUrl(req);
   res.json({
     resource: baseUrl,
-    authorization_servers: [publicBaseUrl(req)],
+    authorization_servers: [authorizationServer],
     scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email offline_access").split(/\s+/).filter(Boolean),
     bearer_methods_supported: ["header"],
   });
@@ -117,25 +119,36 @@ app.get("/.well-known/oauth-protected-resource/mcp", (req: Request, res: Respons
 // We therefore expose LitlMatrix as a standards-compliant authorization-server
 // facade and proxy the OAuth operations to Clerk. This keeps issuer and metadata
 // on the same origin while Clerk remains the actual OAuth identity provider.
-app.get("/.well-known/oauth-authorization-server", (req: Request, res: Response) => {
+app.get("/.well-known/oauth-authorization-server", async (_req: Request, res: Response) => {
   applyMetadataCors(res);
-  const baseUrl = publicBaseUrl(req);
   const clerk = clerkBaseUrl();
-  res.json({
-    issuer: baseUrl,
-    authorization_endpoint: `${baseUrl}/oauth/authorize`,
-    token_endpoint: `${baseUrl}/oauth/token`,
-    registration_endpoint: `${baseUrl}/oauth/register`,
-    revocation_endpoint: `${baseUrl}/oauth/revoke`,
-    response_types_supported: ["code"],
-    grant_types_supported: ["authorization_code", "refresh_token"],
-    token_endpoint_auth_methods_supported: ["none", "client_secret_basic", "client_secret_post"],
-    code_challenge_methods_supported: ["S256"],
-    scopes_supported: (process.env.AUTH_SCOPES ?? "openid profile email offline_access").split(/\s+/).filter(Boolean),
-    service_documentation: "https://clerk.com/docs/guides/ai/mcp/build-mcp-server",
-    // The facade delegates all actual OAuth operations to Clerk.
-    authorization_service: clerk,
-  });
+  if (!clerk) {
+    return res.status(503).json({ error: "server_error", error_description: "Clerk OAuth authorization server is not configured." });
+  }
+  try {
+    const upstream = await fetch(`${clerk}/.well-known/oauth-authorization-server`, {
+      headers: { accept: "application/json" },
+    });
+    const body = await upstream.arrayBuffer();
+    const contentType = upstream.headers.get("content-type") || "application/json";
+    res.setHeader("Content-Type", contentType);
+    if (!upstream.ok) {
+      return res.status(upstream.status).send(Buffer.from(body));
+    }
+    const metadata = JSON.parse(Buffer.from(body).toString("utf8")) as Record<string, unknown>;
+    const methods = Array.isArray(metadata.code_challenge_methods_supported)
+      ? metadata.code_challenge_methods_supported.filter((value): value is string => typeof value === "string")
+      : [];
+    // Preserve Clerk's real issuer/endpoints while making the required PKCE declaration
+    // explicit for MCP clients that validate the metadata before creating the connector.
+    return res.json({
+      ...metadata,
+      code_challenge_methods_supported: methods.includes("S256") ? methods : ["S256", ...methods],
+    });
+  } catch (error) {
+    console.error("OAuth authorization-server metadata proxy error:", error);
+    return res.status(502).json({ error: "bad_gateway", error_description: "Unable to reach the Clerk OAuth authorization service." });
+  }
 });
 
 function applyOAuthCors(res: Response) {

@@ -4,7 +4,8 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import cors from "cors";
 import type { Request, Response } from "express";
-import { authenticateRequest, AuthError, authConfigured, oauthAuthorizationServerMetadata, oauthProtectedResourceMetadata } from "./auth.js";
+import { authenticateRequest, AuthError, authConfigured } from "./auth.js";
+import { authServerMetadataHandlerClerk, protectedResourceHandlerClerk } from "@clerk/mcp-tools/express";
 import { initStorage, deleteExpiredReviews, pool } from "./storage.js";
 import { createServer } from "./server.js";
 
@@ -16,7 +17,7 @@ async function startHttp() {
   const app = createMcpExpressApp({ host: process.env.HOST ?? "0.0.0.0" });
   const allowedOrigins = (process.env.ALLOWED_ORIGIN ?? "").split(",").map((value) => value.trim()).filter(Boolean);
   app.use(cors({
-    origin: allowedOrigins.length ? allowedOrigins : false,
+    origin: allowedOrigins.length ? allowedOrigins : true,
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Mcp-Session-Id", "Last-Event-ID"],
     exposedHeaders: ["WWW-Authenticate", "Mcp-Session-Id"],
@@ -34,22 +35,25 @@ async function startHttp() {
   app.get("/healthz", async (_req: Request, res: Response) => {
     try {
       await pool.query("SELECT 1");
-      res.json({ ok: true, service: "litmatrix-mcp", version: "0.7.0", authConfigured: authConfigured(), databaseConfigured: true });
+      res.json({ ok: true, service: "litmatrix-mcp", version: "0.9.3", authConfigured: authConfigured(), databaseConfigured: true });
     } catch {
-      res.status(503).json({ ok: false, service: "litmatrix-mcp", version: "0.7.0", authConfigured: authConfigured(), databaseConfigured: true, databaseHealthy: false });
+      res.status(503).json({ ok: false, service: "litmatrix-mcp", version: "0.9.3", authConfigured: authConfigured(), databaseConfigured: true, databaseHealthy: false });
     }
   });
   app.get("/", (_req: Request, res: Response) => {
-    res.json({ service: "LitlMatrix MCP", version: "0.7.0", endpoint: "/mcp", health: "/healthz", authentication: "OAuth/JWT" });
+    res.json({ service: "LitlMatrix MCP", version: "0.9.3", endpoint: "/mcp", health: "/healthz", authentication: "OAuth/JWT" });
   });
 
-  app.get("/.well-known/oauth-protected-resource", (req: Request, res: Response) => {
-    const baseUrl = `${req.protocol}://${req.get("host")}/mcp`;
-    res.json(oauthProtectedResourceMetadata(baseUrl));
-  });
-  app.get("/.well-known/oauth-authorization-server", (_req: Request, res: Response) => {
-    res.json(oauthAuthorizationServerMetadata());
-  });
+  // Use Clerk's official MCP metadata handlers rather than hand-written OAuth metadata.
+  app.get(
+    "/.well-known/oauth-protected-resource/mcp",
+    protectedResourceHandlerClerk({ scopes_supported: ["email", "profile"] }),
+  );
+  app.get(
+    "/.well-known/oauth-protected-resource",
+    protectedResourceHandlerClerk({ scopes_supported: ["email", "profile"] }),
+  );
+  app.get("/.well-known/oauth-authorization-server", authServerMetadataHandlerClerk);
 
   app.all("/mcp", async (req: Request, res: Response) => {
     let owner;

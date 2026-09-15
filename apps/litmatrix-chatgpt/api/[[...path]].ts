@@ -27,7 +27,13 @@ const app = createMcpExpressApp({ host: "0.0.0.0" });
 // Normalize the function prefix so Express routes remain /, /healthz, /mcp, and /.well-known/*
 // regardless of whether the request arrived directly at /api/* or through a Vercel rewrite.
 // Initialize Clerk globally before OAuth/MCP handlers.
-app.use(clerkMiddleware());
+
+app.use(
+  clerkMiddleware({
+    publishableKey: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+    secretKey: process.env.CLERK_SECRET_KEY,
+  }),
+);
 
 app.use((req: Request, _res: Response, next: NextFunction) => {
   if (req.url === "/api" || req.url.startsWith("/api/")) {

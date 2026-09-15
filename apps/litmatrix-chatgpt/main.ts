@@ -16,7 +16,13 @@ async function startHttp() {
 
   const port = Number(process.env.PORT ?? 3001);
   const app = createMcpExpressApp({ host: process.env.HOST ?? "0.0.0.0" });
-  app.use(clerkMiddleware());
+  
+app.use(
+  clerkMiddleware({
+    publishableKey: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+    secretKey: process.env.CLERK_SECRET_KEY,
+  }),
+);
   const allowedOrigins = (process.env.ALLOWED_ORIGIN ?? "").split(",").map((value) => value.trim()).filter(Boolean);
   app.use(cors({
     origin: allowedOrigins.length ? allowedOrigins : true,

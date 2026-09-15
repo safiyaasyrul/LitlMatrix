@@ -17,10 +17,6 @@
       "source": "/.well-known/oauth-authorization-server",
       "headers": [
         {
-          "key": "Content-Type",
-          "value": "application/json; charset=utf-8"
-        },
-        {
           "key": "Cache-Control",
           "value": "public, max-age=300"
         },
@@ -35,6 +31,10 @@
         {
           "key": "Access-Control-Allow-Headers",
           "value": "*"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/json; charset=utf-8"
         }
       ]
     },
@@ -56,6 +56,24 @@
         {
           "key": "Cache-Control",
           "value": "public, max-age=300"
+        }
+      ]
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json; charset=utf-8"
+        }
+      ]
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource/mcp",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json; charset=utf-8"
         }
       ]
     }

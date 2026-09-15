@@ -6,6 +6,7 @@ import cors from "cors";
 import type { Request, Response } from "express";
 import { authenticateRequest, AuthError, authConfigured } from "./auth.js";
 import { authServerMetadataHandlerClerk, protectedResourceHandlerClerk } from "@clerk/mcp-tools/express";
+import { clerkMiddleware } from "@clerk/express";
 import { initStorage, deleteExpiredReviews, pool } from "./storage.js";
 import { createServer } from "./server.js";
 
@@ -15,6 +16,7 @@ async function startHttp() {
 
   const port = Number(process.env.PORT ?? 3001);
   const app = createMcpExpressApp({ host: process.env.HOST ?? "0.0.0.0" });
+  app.use(clerkMiddleware());
   const allowedOrigins = (process.env.ALLOWED_ORIGIN ?? "").split(",").map((value) => value.trim()).filter(Boolean);
   app.use(cors({
     origin: allowedOrigins.length ? allowedOrigins : true,

@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc --noEmit && tsc -p tsconfig.server.json && cross-env INPUT=mcp-app.html vite build",
     "start": "concurrently --raw \"cross-env NODE_ENV=development INPUT=mcp-app.html vite build --watch\" \"tsx watch main.ts\"",
-    "serve": "tsx main.ts",
+    "serve": "tsx --require dotenv/config main.ts",
     "smoke": "node scripts-smoke-test.mjs"
   },
   "dependencies": {
@@ -23,7 +23,8 @@
     "zod": "^4.2.0",
     "pg": "^8.22.0",
     "@clerk/mcp-tools": "^0.6.0",
-    "@clerk/express": "^2.1.67"
+    "@clerk/express": "^2.1.67",
+    "dotenv": "^17.2.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

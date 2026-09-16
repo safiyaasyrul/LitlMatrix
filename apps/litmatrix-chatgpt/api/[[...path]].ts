@@ -1,9 +1,8 @@
 import express, { type Request, type Response } from "express";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
-import { createServer } from "./server.js";
-import { authenticateRequest, AuthError } from "./auth.js";
-import { ensureStorage } from "./storage.js";
-
+import { createServer } from "../server.js";
+import { authenticateRequest, AuthError } from "../auth.js";
+import { ensureStorage } from "../storage.js";
 const app = express();
 app.use(express.json());
 
@@ -60,8 +59,18 @@ app.post("/mcp", async (req: Request, res: Response) => {
     await server.connect(transport);
     await transport.handleRequest(req, res);
   } catch (error) {
-    console.error("LitlMatrix MCP request failed:", error);
+  console.error("LitlMatrix MCP request failed:", error);
 
+  const message =
+    error instanceof Error
+      ? error.message
+      : String(error);
+
+  return res.status(500).json({
+    error: "internal_error",
+    message,
+  });
+}
     if (error instanceof AuthError) {
       if (!res.headersSent) {
         res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${METADATA_URL}"`);

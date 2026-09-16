@@ -164,7 +164,17 @@ app.use("/mcp", (req: Request, res: Response, next: NextFunction) => {
 app.all("/mcp", async (req: Request, res: Response) => {
   try {
     await ensureStorage();
-    const owner = await authenticateRequest(req);
+  let owner;
+try {
+  owner = await authenticateRequest(req);
+} catch (error) {
+  console.error("LITLMATRIX_AUTH_ERROR", {
+    message: error instanceof Error ? error.message : String(error),
+    hasAuthorization: Boolean(req.header("authorization")),
+    authorizationPrefix: req.header("authorization")?.slice(0, 20),
+  });
+  throw error;
+}
     const server = createServer(owner);
     const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => {

@@ -7,7 +7,8 @@ export type AuthUser = {
   name?: string;
 };
 
-const allowAnonymousDev = process.env.ALLOW_ANONYMOUS_DEV === "true";
+const allowAnonymousDev =
+  process.env.ALLOW_ANONYMOUS_DEV === "true";
 
 const allowedEmails = new Set(
   (process.env.LITMATRIX_ALLOWED_EMAILS ?? "")
@@ -19,7 +20,7 @@ const allowedEmails = new Set(
 export function authConfigured() {
   return Boolean(
     process.env.CLERK_PUBLISHABLE_KEY &&
-    process.env.CLERK_SECRET_KEY
+    process.env.CLERK_SECRET_KEY,
   );
 }
 
@@ -31,49 +32,45 @@ export async function authenticateRequest(
       return { subject: "dev-anonymous" };
     }
 
-    throw new AuthError("Clerk authentication is not configured.");
+    throw new AuthError(
+      "Clerk authentication is not configured.",
+    );
   }
 
   const auth = getAuth(req, {
     acceptsToken: "oauth_token",
   });
 
-  if (!auth.isAuthenticated || !auth.userId) {
-    throw new AuthError("Invalid or expired Clerk OAuth access token.");
+  if (!auth.isAuthenticated) {
+    throw new AuthError(
+      "Invalid or expired Clerk OAuth access token.",
+    );
   }
 
-  const subject = auth.userId;
+  const subject = auth.subject || auth.id;
 
-  const claims = auth.sessionClaims as Record<string, unknown> | undefined;
+  if (!subject) {
+    throw new AuthError(
+      "Clerk OAuth access token has no subject.",
+    );
+  }
 
-  const email =
-    typeof claims?.email === "string"
-      ? claims.email.trim().toLowerCase()
-      : undefined;
-
-  const name =
-    typeof claims?.name === "string"
-      ? claims.name
-      : undefined;
-
+  /*
+   * OAuth authentication does not expose sessionClaims on the
+   * AuthObject returned by getAuth().
+   *
+   * Email/name are therefore optional here. The authenticated
+   * Clerk subject remains the stable owner identifier used by
+   * LitlMatrix.
+   */
   if (allowedEmails.size > 0) {
-    if (!email) {
-      throw new AuthError(
-        "This account does not have an email address available for LitlMatrix access.",
-      );
-    }
-
-    if (!allowedEmails.has(email)) {
-      throw new AuthError(
-        "This email address is not authorized to use LitlMatrix.",
-      );
-    }
+    throw new AuthError(
+      "LITMATRIX_ALLOWED_EMAILS requires email claims, which are not exposed by the Clerk OAuth token.",
+    );
   }
 
   return {
     subject,
-    email,
-    name,
   };
 }
 

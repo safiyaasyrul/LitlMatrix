@@ -151,9 +151,14 @@ app.use("/actions", createActionsRouter());
 
 // MCP OAuth challenge must be emitted at the HTTP boundary before authentication.
 // This guarantees that MCP clients can discover the Protected Resource Metadata URL from the 401 response.
-app.use("/mcp", (req: Request, res: Response, next: NextFunction) => {
-  if (!req.header("authorization")) {
-    const metadataUrl =
+app.use("/mcp", (req, res, next) => {
+  console.log("LITLMATRIX_MCP_AUTH_CHECK", {
+    method: req.method,
+    hasAuthorization: Boolean(req.header("authorization")),
+    authorizationPrefix: req.header("authorization")?.slice(0, 20),
+  });
+
+  if (!req.header("authorization")) {    const metadataUrl =
   `https://${req.get("host")}/.well-known/oauth-protected-resource/mcp`;
     res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${metadataUrl}"`);
     return res.status(401).json({ error: "unauthorized", message: "Authorization required." });

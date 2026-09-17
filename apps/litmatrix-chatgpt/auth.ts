@@ -28,7 +28,7 @@ export async function authenticateRequest(
     );
   }
 
-  const subject = auth.subject || auth.userId;
+  const subject = auth.userId;
 
   if (!subject) {
     throw new AuthError(

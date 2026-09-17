@@ -245,6 +245,7 @@ app.post(
       await transport.handleRequest(
         req,
         res,
+        req.body,
       );
 
     } catch (error) {

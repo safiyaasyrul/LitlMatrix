@@ -7,7 +7,14 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be configured for Phase 6 persistent storage.");
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+let connectionString = process.env.DATABASE_URL;
+if (connectionString.includes("sslmode=require") || connectionString.includes("sslmode=prefer")) {
+  if (!connectionString.includes("uselibpqcompat=true")) {
+    connectionString += (connectionString.includes("?") ? "&" : "?") + "uselibpqcompat=true";
+  }
+}
+
+export const pool = new Pool({ connectionString });
 
 export async function initStorage() {
   await pool.query(`

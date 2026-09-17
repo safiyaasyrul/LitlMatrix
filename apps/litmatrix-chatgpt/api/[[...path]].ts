@@ -50,7 +50,12 @@ app.use(
  * This MUST be registered before mcpAuthClerk
  * or getAuth().
  */
-app.use(clerkMiddleware());
+app.use(
+  clerkMiddleware({
+    publishableKey: process.env.CLERK_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+    secretKey: process.env.CLERK_SECRET_KEY,
+  })
+);
 
 /**
  * JSON body parser

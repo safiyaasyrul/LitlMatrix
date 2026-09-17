@@ -7,7 +7,6 @@ import cors from "cors";
 
 import {
   clerkMiddleware,
-  getAuth,
 } from "@clerk/express";
 
 import {
@@ -25,12 +24,13 @@ import { initStorage } from "../storage.js";
 
 const app = express();
 
+const MCP_RESOURCE =
+  "https://litl-matrix-api-server.vercel.app/mcp";
+
 /**
+ * ---------------------------------------------------------
  * CORS
- *
- * Required so ChatGPT and other public MCP clients
- * can access the MCP endpoint and read the
- * WWW-Authenticate header.
+ * ---------------------------------------------------------
  */
 app.use(
   cors({
@@ -44,37 +44,34 @@ app.use(
 );
 
 /**
+ * ---------------------------------------------------------
  * Clerk middleware
+ * ---------------------------------------------------------
  *
- * IMPORTANT:
- * This MUST be registered before mcpAuthClerk
- * or getAuth().
+ * Must be registered before authentication helpers.
  */
-app.use(
-  clerkMiddleware({
-    publishableKey: process.env.CLERK_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
-    secretKey: process.env.CLERK_SECRET_KEY,
-  })
-);
+app.use(clerkMiddleware());
 
 /**
- * JSON body parser
+ * ---------------------------------------------------------
+ * Body parser
+ * ---------------------------------------------------------
  */
 app.use(express.json());
 
 /**
- * =========================================================
+ * ---------------------------------------------------------
  * OAuth Protected Resource Metadata
- * =========================================================
+ * ---------------------------------------------------------
  *
- * These endpoints must remain publicly accessible.
+ * These endpoints MUST remain public.
  */
 
 /**
- * Current MCP protected-resource metadata endpoint.
+ * Current MCP protected-resource metadata.
  */
 app.get(
-  ["/.well-known/oauth-protected-resource/mcp", "/api/.well-known/oauth-protected-resource/mcp"],
+  "/.well-known/oauth-protected-resource/mcp",
   protectedResourceHandlerClerk({
     scopes_supported: [
       "email",
@@ -84,7 +81,20 @@ app.get(
 );
 
 /**
- * Older MCP clients may use this endpoint.
+ * Root protected-resource metadata.
+ */
+app.get(
+  "/.well-known/oauth-protected-resource",
+  protectedResourceHandlerClerk({
+    scopes_supported: [
+      "email",
+      "profile",
+    ],
+  }),
+);
+
+/**
+ * Older OAuth/MCP clients.
  */
 app.get(
   "/.well-known/oauth-authorization-server",
@@ -92,26 +102,12 @@ app.get(
 );
 
 /**
- * Keep the non-/mcp protected-resource endpoint
- * available as well.
+ * ---------------------------------------------------------
+ * Health
+ * ---------------------------------------------------------
  */
 app.get(
-  ["/.well-known/oauth-protected-resource", "/api/.well-known/oauth-protected-resource"],
-  protectedResourceHandlerClerk({
-    scopes_supported: [
-      "email",
-      "profile",
-    ],
-  }),
-);
-
-/**
- * =========================================================
- * Health check
- * =========================================================
- */
-app.get(
-  ["/health", "/healthz", "/api/healthz"],
+  "/health",
   (_req: Request, res: Response) => {
     res.json({
       ok: true,
@@ -120,10 +116,7 @@ app.get(
 
       authConfigured: Boolean(
         process.env.CLERK_SECRET_KEY &&
-        (
-          process.env.CLERK_PUBLISHABLE_KEY ||
-          process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-        ),
+        process.env.CLERK_PUBLISHABLE_KEY,
       ),
 
       databaseConfigured: Boolean(
@@ -134,15 +127,21 @@ app.get(
 );
 
 /**
- * =========================================================
- * MCP endpoint
- * =========================================================
+ * ---------------------------------------------------------
+ * MCP POST
+ * ---------------------------------------------------------
  *
- * mcpAuthClerk validates the incoming Clerk OAuth
- * access token before this handler executes.
+ * ChatGPT sends OAuth access tokens here.
+ *
+ * mcpAuthClerk:
+ *   - reads Authorization: Bearer ...
+ *   - validates the Clerk OAuth token
+ *   - rejects unauthorized requests with 401
+ *
+ * We DO NOT call getAuth() again.
  */
 app.post(
-  ["/mcp", "/api/mcp"],
+  "/mcp",
   mcpAuthClerk,
   async (
     req: Request,
@@ -164,29 +163,30 @@ app.post(
 
       /**
        * mcpAuthClerk has already authenticated
-       * the OAuth access token.
+       * this request.
        *
-       * Read the authenticated Clerk user ID.
+       * It attaches authentication information
+       * to the request.
        *
-       * acceptsToken: "oauth_token" is important
-       * because ChatGPT is using a Clerk OAuth token,
-       * not a normal browser session token.
+       * We only need the Clerk user ID as the
+       * LitlMatrix owner identifier.
        */
-      const auth = getAuth(
-        req,
-        {
-          acceptsToken: "oauth_token",
-        },
-      );
+      const auth = (req as any).auth;
 
-      const userId = auth.userId;
+      const userId =
+        auth?.userId ??
+        auth?.subject;
 
-      if (!auth.isAuthenticated || !userId) {
+      if (!userId) {
+        console.error(
+          "LitlMatrix: Clerk authentication succeeded but no user ID was available.",
+        );
+
         if (!res.headersSent) {
           return res.status(401).json({
             error: "unauthorized",
             message:
-              "Authenticated Clerk user could not be determined.",
+              "Authenticated Clerk user could not be identified.",
           });
         }
 
@@ -195,25 +195,23 @@ app.post(
 
       /**
        * LitlMatrix owner.
-       *
-       * server.ts expects an AuthUser with a
-       * stable subject identifier.
        */
       const owner = {
         subject: userId,
       };
 
+      console.log(
+        "LitlMatrix MCP authenticated user:",
+        userId,
+      );
+
       /**
-       * Create a separate LitlMatrix MCP server
-       * for this authenticated user.
+       * Create the existing LitlMatrix MCP server.
        */
       server = createServer(owner);
 
       /**
-       * Existing LitlMatrix transport.
-       *
-       * Keep the transport already used by this
-       * project rather than changing the MCP SDK.
+       * Existing MCP transport.
        */
       transport =
         new NodeStreamableHTTPServerTransport({
@@ -221,7 +219,7 @@ app.post(
         });
 
       /**
-       * Clean up resources when the request closes.
+       * Cleanup.
        */
       res.on("close", () => {
         transport?.close().catch(() => {});
@@ -229,12 +227,12 @@ app.post(
       });
 
       /**
-       * Connect LitlMatrix MCP server to transport.
+       * Connect MCP server.
        */
       await server.connect(transport);
 
       /**
-       * Process the MCP request.
+       * Handle MCP request.
        */
       await transport.handleRequest(
         req,
@@ -263,15 +261,37 @@ app.post(
 );
 
 /**
- * =========================================================
- * Unsupported MCP methods
- * =========================================================
+ * ---------------------------------------------------------
+ * GET /mcp
+ * ---------------------------------------------------------
  *
- * MCP clients should use POST /mcp.
+ * A browser GET should NOT return 405.
+ *
+ * MCP clients performing discovery/smoke tests may
+ * expect an OAuth challenge.
+ */
+app.get(
+  "/mcp",
+  (_req: Request, res: Response) => {
+    res.setHeader(
+      "WWW-Authenticate",
+      `Bearer resource_metadata="${MCP_RESOURCE}/../.well-known/oauth-protected-resource/mcp"`,
+    );
+
+    return res.status(401).json({
+      error: "unauthorized",
+      message: "Authorization required.",
+    });
+  },
+);
+
+/**
+ * ---------------------------------------------------------
+ * Other unsupported MCP methods
+ * ---------------------------------------------------------
  */
 app.all(
-  ["/mcp", "/api/mcp"],
-  mcpAuthClerk,
+  "/mcp",
   (_req: Request, res: Response) => {
     if (!res.headersSent) {
       return res.status(405).json({
@@ -283,6 +303,8 @@ app.all(
 );
 
 /**
- * Export Vercel serverless application.
+ * ---------------------------------------------------------
+ * Export
+ * ---------------------------------------------------------
  */
 export default app;

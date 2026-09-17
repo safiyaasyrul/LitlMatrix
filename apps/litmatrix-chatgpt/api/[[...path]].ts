@@ -176,30 +176,30 @@ app.post(
        * We only need the Clerk user ID as the
        * LitlMatrix owner identifier.
        */
-  const authInfo = (req as any).authInfo;
+      const authData = (req as any).auth;
 
-const userId =
-  authInfo?.extra?.userId;
+      const userId =
+        authData?.extra?.userId ?? authData?.userId;
 
-if (!userId) {
-  console.error(
-    "LitlMatrix: Clerk MCP authentication succeeded but authInfo.extra.userId was not available.",
-    {
-      hasAuthInfo: Boolean(authInfo),
-      hasExtra: Boolean(authInfo?.extra),
-    },
-  );
+      if (!userId) {
+        console.error(
+          "LitlMatrix: Clerk MCP authentication succeeded but userId was not available.",
+          {
+            hasAuthData: Boolean(authData),
+            hasExtra: Boolean(authData?.extra),
+          }
+        );
 
-  if (!res.headersSent) {
-    return res.status(401).json({
-      error: "unauthorized",
-      message:
-        "Authenticated Clerk user could not be identified.",
-    });
-  }
+        if (!res.headersSent) {
+          return res.status(401).json({
+            error: "unauthorized",
+            message:
+              "Authenticated Clerk user could not be identified.",
+          });
+        }
 
-  return;
-}
+        return;
+      }
 
       /**
        * LitlMatrix owner.

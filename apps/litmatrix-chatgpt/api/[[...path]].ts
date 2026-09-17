@@ -8,7 +8,7 @@ import {
 } from "@clerk/mcp-tools/express";
 
 import { createServer } from "../server.js";
-import { ensureStorage } from "../storage.js";
+import { initStorage } from "../storage.js";
 
 const app = express();
 
@@ -89,7 +89,7 @@ app.post(
       | undefined;
 
     try {
-      await ensureStorage();
+      await initStorage();
 
       /**
        * mcpAuthClerk has already authenticated

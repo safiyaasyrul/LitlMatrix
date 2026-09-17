@@ -1,12 +1,29 @@
 import express, { type Request, type Response } from "express";
+import cors from "cors";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+
+import {
+  mcpAuthClerk,
+  protectedResourceHandlerClerk,
+} from "@clerk/mcp-tools/express";
+
 import { createServer } from "../server.js";
-import { authenticateRequest, AuthError } from "../auth.js";
 import { ensureStorage } from "../storage.js";
 
 const app = express();
 
 app.use(express.json());
+
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+    exposedHeaders: [
+      "WWW-Authenticate",
+      "Mcp-Session-Id",
+    ],
+  }),
+);
 
 const CLERK_ISSUER =
   "https://loyal-gelding-9175.clerk.accounts.dev";
@@ -14,74 +31,23 @@ const CLERK_ISSUER =
 const MCP_RESOURCE =
   "https://litl-matrix-api-server.vercel.app/mcp";
 
-const METADATA_URL =
-  "https://litl-matrix-api-server.vercel.app/.well-known/oauth-protected-resource/mcp";
-
-function protectedResourceMetadata() {
-  return {
-    resource: MCP_RESOURCE,
-
-    authorization_servers: [
-      CLERK_ISSUER,
-    ],
-
-    token_types_supported: [
-      "urn:ietf:params:oauth:token-type:access_token",
-    ],
-
-    token_introspection_endpoint:
-      `${CLERK_ISSUER}/oauth/token`,
-
-    token_introspection_endpoint_auth_methods_supported: [
-      "client_secret_post",
-      "client_secret_basic",
-    ],
-
-    jwks_uri:
-      `${CLERK_ISSUER}/.well-known/jwks.json`,
-
-    authorization_data_types_supported: [
-      "oauth_scope",
-    ],
-
-    authorization_data_locations_supported: [
-      "header",
-      "body",
-    ],
-
-    key_challenges_supported: [
-      {
-        challenge_type:
-          "urn:ietf:params:oauth:pkce:code_challenge",
-        challenge_algs: ["S256"],
-      },
-    ],
-
-    service_documentation:
-      "https://clerk.com/docs",
-
-    scopes_supported: [
-      "email",
-      "profile",
-    ],
-  };
-}
-
 /**
  * OAuth Protected Resource Metadata
+ *
+ * Clerk MCP middleware provides the metadata.
  */
 app.get(
   "/.well-known/oauth-protected-resource",
-  (_req: Request, res: Response) => {
-    res.json(protectedResourceMetadata());
-  },
+  protectedResourceHandlerClerk({
+    scopesSupported: ["openid", "profile", "email"],
+  }),
 );
 
 app.get(
   "/.well-known/oauth-protected-resource/mcp",
-  (_req: Request, res: Response) => {
-    res.json(protectedResourceMetadata());
-  },
+  protectedResourceHandlerClerk({
+    scopesSupported: ["openid", "profile", "email"],
+  }),
 );
 
 /**
@@ -94,11 +60,9 @@ app.get(
       ok: true,
       service: "litmatrix-mcp",
       version: "0.9.1",
-
       authConfigured: Boolean(
         process.env.CLERK_SECRET_KEY,
       ),
-
       databaseConfigured: Boolean(
         process.env.DATABASE_URL,
       ),
@@ -108,90 +72,82 @@ app.get(
 
 /**
  * MCP endpoint
+ *
+ * mcpAuthClerk validates the Clerk OAuth
+ * access token before the handler runs.
  */
 app.post(
   "/mcp",
+  mcpAuthClerk,
   async (req: Request, res: Response) => {
+    let server:
+      | ReturnType<typeof createServer>
+      | undefined;
+
+    let transport:
+      | NodeStreamableHTTPServerTransport
+      | undefined;
+
     try {
       await ensureStorage();
 
       /**
-       * Authenticate the ChatGPT OAuth access token.
-       */
-      const owner =
-        await authenticateRequest(req);
-
-      /**
-       * Create an MCP server for this authenticated owner.
-       */
-      const server =
-        createServer(owner);
-
-      /**
-       * Streamable HTTP transport.
+       * mcpAuthClerk has already authenticated
+       * the request.
        *
-       * LitlMatrix currently uses stateless
-       * MCP requests, therefore no session ID.
+       * Clerk places the authenticated subject
+       * on req.auth.
        */
-      const transport =
+      const auth = (req as any).auth;
+
+      const subject =
+        auth?.subject ||
+        auth?.userId;
+
+      if (!subject) {
+        return res.status(401).json({
+          error: "unauthorized",
+          message:
+            "Authenticated Clerk request has no subject.",
+        });
+      }
+
+      const owner = {
+        subject,
+      };
+
+      /**
+       * Create the existing LitlMatrix MCP server
+       * for this authenticated user.
+       */
+      server = createServer(owner);
+
+      /**
+       * Preserve your existing MCP transport.
+       */
+      transport =
         new NodeStreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
         });
 
-      /**
-       * Clean up when the HTTP response closes.
-       */
       res.on("close", () => {
-        transport.close().catch(() => {});
-        server.close().catch(() => {});
+        transport?.close().catch(() => {});
+        server?.close().catch(() => {});
       });
 
-      /**
-       * Connect MCP server to transport.
-       */
       await server.connect(transport);
 
-      /**
-       * Handle the MCP request.
-       */
       await transport.handleRequest(
         req,
         res,
       );
 
     } catch (error) {
-
       console.error(
         "LitlMatrix MCP request failed:",
         error,
       );
 
-      /**
-       * IMPORTANT:
-       * Authentication failures must return 401,
-       * not 500, so ChatGPT can correctly process
-       * the OAuth challenge.
-       */
-      if (error instanceof AuthError) {
-
-        if (!res.headersSent) {
-          res.setHeader(
-            "WWW-Authenticate",
-            `Bearer resource_metadata="${METADATA_URL}"`,
-          );
-
-          return res.status(401).json({
-            error: "unauthorized",
-            message: error.message,
-          });
-        }
-
-        return;
-      }
-
-      /**
-       * Handle unexpected server errors.
-       */
       const message =
         error instanceof Error
           ? error.message

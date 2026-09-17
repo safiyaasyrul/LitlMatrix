@@ -50,7 +50,12 @@ app.use(
  *
  * Must be registered before authentication helpers.
  */
-app.use(clerkMiddleware());
+app.use(
+  clerkMiddleware({
+    publishableKey: process.env.CLERK_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+    secretKey: process.env.CLERK_SECRET_KEY,
+  })
+);
 
 /**
  * ---------------------------------------------------------
@@ -71,7 +76,7 @@ app.use(express.json());
  * Current MCP protected-resource metadata.
  */
 app.get(
-  "/.well-known/oauth-protected-resource/mcp",
+  ["/.well-known/oauth-protected-resource/mcp", "/api/.well-known/oauth-protected-resource/mcp"],
   protectedResourceHandlerClerk({
     scopes_supported: [
       "email",
@@ -84,7 +89,7 @@ app.get(
  * Root protected-resource metadata.
  */
 app.get(
-  "/.well-known/oauth-protected-resource",
+  ["/.well-known/oauth-protected-resource", "/api/.well-known/oauth-protected-resource"],
   protectedResourceHandlerClerk({
     scopes_supported: [
       "email",
@@ -107,7 +112,7 @@ app.get(
  * ---------------------------------------------------------
  */
 app.get(
-  "/health",
+  ["/health", "/healthz", "/api/healthz"],
   (_req: Request, res: Response) => {
     res.json({
       ok: true,
@@ -141,7 +146,7 @@ app.get(
  * We DO NOT call getAuth() again.
  */
 app.post(
-  "/mcp",
+  ["/mcp", "/api/mcp"],
   mcpAuthClerk,
   async (
     req: Request,
@@ -171,27 +176,30 @@ app.post(
        * We only need the Clerk user ID as the
        * LitlMatrix owner identifier.
        */
-      const auth = (req as any).auth;
+  const authInfo = (req as any).authInfo;
 
-      const userId =
-        auth?.userId ??
-        auth?.subject;
+const userId =
+  authInfo?.extra?.userId;
 
-      if (!userId) {
-        console.error(
-          "LitlMatrix: Clerk authentication succeeded but no user ID was available.",
-        );
+if (!userId) {
+  console.error(
+    "LitlMatrix: Clerk MCP authentication succeeded but authInfo.extra.userId was not available.",
+    {
+      hasAuthInfo: Boolean(authInfo),
+      hasExtra: Boolean(authInfo?.extra),
+    },
+  );
 
-        if (!res.headersSent) {
-          return res.status(401).json({
-            error: "unauthorized",
-            message:
-              "Authenticated Clerk user could not be identified.",
-          });
-        }
+  if (!res.headersSent) {
+    return res.status(401).json({
+      error: "unauthorized",
+      message:
+        "Authenticated Clerk user could not be identified.",
+    });
+  }
 
-        return;
-      }
+  return;
+}
 
       /**
        * LitlMatrix owner.
@@ -271,7 +279,7 @@ app.post(
  * expect an OAuth challenge.
  */
 app.get(
-  "/mcp",
+  ["/mcp", "/api/mcp"],
   (_req: Request, res: Response) => {
     res.setHeader(
       "WWW-Authenticate",
@@ -291,7 +299,7 @@ app.get(
  * ---------------------------------------------------------
  */
 app.all(
-  "/mcp",
+  ["/mcp", "/api/mcp"],
   (_req: Request, res: Response) => {
     if (!res.headersSent) {
       return res.status(405).json({

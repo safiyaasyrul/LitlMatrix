@@ -82,7 +82,7 @@ function buildWebOfScienceQuery(
   if (language === "English") filters.push("LA=(ENGLISH)");
   if (language === "English OR Malay") filters.push("LA=(ENGLISH OR MALAY)");
 
-  return `TS=(${topic}) AND ${filters.join(" AND ")}`;
+  return `TI=(${topic}) AND ${filters.join(" AND ")}`;
 }
 
 function quoteSearchTerm(term: string): string {
@@ -134,7 +134,7 @@ function buildFallbackSearchStrategies(
     docType === "Journal article" ? "DOCTYPE(ar)" : docType === "Article OR Conference Paper" ? "DOCTYPE(ar OR cp)" : "",
     language === "English" ? "LANGUAGE(English)" : language === "English OR Malay" ? "LANGUAGE(English OR Malay)" : "",
   ].filter(Boolean);
-  const scopusQuery = `TITLE-ABS-KEY(${topic})${scopusFilters.length ? ` AND ${scopusFilters.join(" AND ")}` : ""}`;
+  const scopusQuery = `TITLE(${topic})${scopusFilters.length ? ` AND ${scopusFilters.join(" AND ")}` : ""}`;
   const wosQuery = buildWebOfScienceQuery(keywords, yearFrom, yearTo, docType, language);
   const pubmedTopic = uniqueTerms.map((term) => `${quoteSearchTerm(term)}[Title/Abstract]`).join(" OR ") || "\"systematic review\"[Title/Abstract]";
   const pubmedQuery = `(${pubmedTopic}) AND (${yearFrom}:${yearTo}[dp])${language === "English" ? " AND English[lang]" : language === "English OR Malay" ? " AND (English[lang] OR Malay[lang])" : ""}`;
@@ -425,9 +425,9 @@ Applied Search Parameters & Limits:
 4. Document Type: "${docType}"
 5. Language: "${language}"
 
-Construct reproducible, highly focused, fully validated Boolean search strings for the following academic databases adhering strictly to PRISMA 2020 Item 7. Ensure queries prioritize exact phrase matching (using double quotes for multi-word terms) to prevent thousands of irrelevant results:
-1. Scopus: Complete TITLE-ABS-KEY query with grouped Boolean concept blocks (Concept 1 OR ...) AND (Concept 2 OR ...), plus AND (SUBJAREA(...) ), PUBSTAGE filter, PUBYEAR, DOCTYPE, and LANGUAGE.
-2. Web of Science (WoS) Core Collection: Use only valid WoS field tags: TS=(...), PY=(YYYY-YYYY), DT=(ARTICLE/REVIEW/PROCEEDINGS PAPER), and LA=(ENGLISH). Do not use Scopus TITLE-ABS-KEY, PUBYEAR, SUBJAREA, PUBSTAGE, or unsupported field names.
+Construct reproducible, highly focused, fully validated Boolean search strings for the following academic databases adhering strictly to PRISMA 2020 Item 7. Ensure queries prioritize exact phrase matching (using double quotes for multi-word terms) and search ONLY in the TITLE field to prevent thousands of irrelevant results:
+1. Scopus: Complete TITLE query with grouped Boolean concept blocks (Concept 1 OR ...) AND (Concept 2 OR ...), plus AND (SUBJAREA(...) ), PUBSTAGE filter, PUBYEAR, DOCTYPE, and LANGUAGE. Use TITLE(...) instead of TITLE-ABS-KEY.
+2. Web of Science (WoS) Core Collection: Use only valid WoS field tags: TI=(...), PY=(YYYY-YYYY), DT=(ARTICLE/REVIEW/PROCEEDINGS PAPER), and LA=(ENGLISH). Use TI (Title) instead of TS (Topic). Do not use Scopus TITLE, PUBYEAR, SUBJAREA, PUBSTAGE, or unsupported field names.
 3. PubMed / MEDLINE: Complete syntax using [Title/Abstract] and [MeSH Terms] with Date range and Language limits.
 4. IEEE Xplore: Complete syntax using ("Document Title" OR "Abstract") with publication year range.
 5. Google Scholar / ACM Digital Library: Optimized Boolean search string.
@@ -437,12 +437,12 @@ Keep every query on one line. Any double quotes inside a query string must be es
 [
   {
     "database": "Scopus",
-    "query": "TITLE-ABS-KEY(...)",
+    "query": "TITLE(...)",
     "filters": "Years ${yearFrom}-${yearTo}, ${subjectAreasDesc}, ${stageDesc}, ${docType}, ${language}"
   },
   {
     "database": "Web of Science",
-    "query": "TS=(...)",
+    "query": "TI=(...)",
     "filters": "Years ${yearFrom}-${yearTo}, ${subjectAreasDesc}, ${stageDesc}, ${docType}, ${language}"
   },
   {
@@ -720,7 +720,58 @@ Keep every query on one line. Any double quotes inside a query string must be es
           </div>
         </div>
 
-        {/* Section 2: Subject Areas & Publication Stage (Requested Enhancements) */}
+        {/* Section 2: Search Limits & Date Range */}
+        <div className="p-4 bg-slate-50/70 border border-slate-200 rounded-xl space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Filter className="w-4 h-4 text-indigo-600" />
+            <span className="font-mono text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  Search Limits & Date Range (PRISMA 2020 Item 7)
+            </span>
+          </div>
+          
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-[11px] font-mono text-slate-500 mb-1">Publication Year (From)</label>
+              <input
+                type="number"
+                value={yearFrom}
+                onChange={(e) => setYearFrom(parseInt(e.target.value) || 2019)}
+                className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-mono text-slate-500 mb-1">Publication Year (To)</label>
+              <input
+                type="number"
+                value={yearTo}
+                onChange={(e) => setYearTo(parseInt(e.target.value) || 2026)}
+                className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-mono text-slate-500 mb-1">Document Type</label>
+              <input
+                type="text"
+                value={docType}
+                onChange={(e) => setDocType(e.target.value)}
+                placeholder="e.g. Journal article"
+                className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-mono text-slate-500 mb-1">Language</label>
+              <input
+                type="text"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                placeholder="e.g. English"
+                className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Section 3: Subject Areas & Publication Stage */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Subject Area Selector */}
           <div className="p-4 bg-slate-50/70 border border-slate-200 rounded-xl space-y-3">
@@ -728,7 +779,7 @@ Keep every query on one line. Any double quotes inside a query string must be es
               <div className="flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-indigo-600" />
                 <span className="font-mono text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Target Subject Areas (Scopus SUBJAREA & WoS Categories)
+                  Target Subject Areas (Scopus / WoS)
                 </span>
               </div>
               <span className="text-[10px] font-mono text-slate-500 font-bold">
@@ -737,7 +788,7 @@ Keep every query on one line. Any double quotes inside a query string must be es
             </div>
 
             <p className="text-[11px] text-slate-500 font-sans leading-relaxed">
-              Restricts search results to relevant academic fields (e.g. Scopus <code className="text-indigo-600 font-mono">SUBJAREA(COMP)</code> or WoS Categories).
+              Restricts search results to relevant academic fields (e.g. Scopus <code className="text-indigo-600 font-mono">SUBJAREA(COMP)</code>).
             </p>
 
             <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pr-1">
@@ -843,57 +894,9 @@ Keep every query on one line. Any double quotes inside a query string must be es
           </div>
         </div>
 
-        {/* Section 3: Additional Database Limits & Synthesis Trigger */}
+        {/* Section 4: Synthesis Trigger */}
         <div className="p-4 bg-slate-50/70 border border-slate-200 rounded-xl space-y-4">
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-indigo-600" />
-            <span className="font-mono text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Search Limits & Date Range (PRISMA 2020 Item 7)
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="block text-[11px] font-mono text-slate-500 mb-1">Publication Year (From)</label>
-              <input
-                type="number"
-                value={yearFrom}
-                onChange={(e) => setYearFrom(parseInt(e.target.value) || 2019)}
-                className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-mono text-slate-500 mb-1">Publication Year (To)</label>
-              <input
-                type="number"
-                value={yearTo}
-                onChange={(e) => setYearTo(parseInt(e.target.value) || 2026)}
-                className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-mono text-slate-500 mb-1">Document Type</label>
-              <input
-                type="text"
-                value={docType}
-                onChange={(e) => setDocType(e.target.value)}
-                placeholder="e.g. Journal article"
-                className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-mono text-slate-500 mb-1">Language</label>
-              <input
-                type="text"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                placeholder="e.g. English"
-                className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
-              />
-            </div>
-          </div>
-
-          <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs font-mono text-slate-600">
               Generating queries with: <strong className="text-indigo-600">{acceptedKeywords.length} accepted keywords</strong>, <strong className="text-indigo-600">{selectedSubjectAreas.length} subject areas</strong>, stage: <strong className="text-indigo-600">{publicationStage}</strong>.
             </div>

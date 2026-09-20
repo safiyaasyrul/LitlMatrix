@@ -101,72 +101,153 @@ function buildFallbackSearchStrategies(
   const selectedTerms = keywords
     .filter((keyword) => keyword.selected && keyword.term.trim())
     .map((keyword) => keyword.term.trim());
+
   const uniqueTerms = Array.from(new Set(selectedTerms));
-  const conceptBlocks = Array.from(new Set(
-    keywords
-      .filter((keyword) => keyword.selected && keyword.term.trim())
-      .map((keyword) => keyword.category)
-  )).map((category) => {
-    const terms = keywords
-      .filter((keyword) => keyword.selected && keyword.term.trim() && keyword.category === category)
-      .map((keyword) => quoteSearchTerm(keyword.term));
-    return terms.length > 0 ? `(${terms.join(" OR ")})` : "";
-  }).filter(Boolean);
-  // Initial PICO fields are often single, long phrases rather than synonym
-  // groups. Requiring every one with AND can legitimately return zero records.
-  // Use a broad OR starter query until the user has supplied enough synonyms
-  // to form multiple concept blocks.
-  const hasSynonymBlocks = conceptBlocks.length >= 2 &&
-    keywords.some((keyword) => keyword.selected && keyword.term.trim() &&
-      keywords.filter((candidate) =>
-        candidate.selected &&
-        candidate.category === keyword.category &&
-        candidate.term.trim()
-      ).length > 1);
-  const topic = hasSynonymBlocks
-    ? conceptBlocks.join(" AND ")
-    : `(${uniqueTerms.map(quoteSearchTerm).join(" OR ") || "\"systematic review\""})`;
-  const scopusFilters = [
+
+  // Group accepted keywords by concept.
+  const conceptBlocks = Array.from(
+    new Set(
+      keywords
+        .filter((keyword) => keyword.selected && keyword.term.trim())
+        .map((keyword) => keyword.category)
+    )
+  )
+    .map((category) => {
+      const terms = keywords
+        .filter(
+          (keyword) =>
+            keyword.selected &&
+            keyword.term.trim() &&
+            keyword.category === category
+        )
+        .map((keyword) => quoteSearchTerm(keyword.term));
+
+      return terms.length > 0 ? `(${terms.join(" OR ")})` : "";
+    })
+    .filter(Boolean);
+
+  /*
+   * Use AND between distinct concept groups.
+   * If insufficient concept groups exist, fall back to an OR query.
+   */
+  const topic =
+    conceptBlocks.length >= 2
+      ? conceptBlocks.join(" AND ")
+      : `(${uniqueTerms.map(quoteSearchTerm).join(" OR ") || "\"systematic review\""})`;
+
+  /*
+   * -------------------------
+   * SCOPUS FILTERS
+   * -------------------------
+   */
+  const scopusFilters: string[] = [
     `PUBYEAR > ${yearFrom - 1}`,
     `PUBYEAR < ${yearTo + 1}`,
-    selectedSubjectAreas.length > 0 ? `(${selectedSubjectAreas.map((code) => `SUBJAREA(${code})`).join(" OR ")})` : "",
-    publicationStage === "final" ? "PUBSTAGE(final)" : publicationStage === "inpress" ? "PUBSTAGE(aip)" : "",
-    docType === "Journal article" ? "DOCTYPE(ar)" : docType === "Article OR Conference Paper" ? "DOCTYPE(ar OR cp)" : "",
-    language === "English" ? "LANGUAGE(English)" : language === "English OR Malay" ? "LANGUAGE(English OR Malay)" : "",
-  ].filter(Boolean);
-  const scopusQuery = `TITLE(${topic})${scopusFilters.length ? ` AND ${scopusFilters.join(" AND ")}` : ""}`;
-  const wosQuery = buildWebOfScienceQuery(keywords, yearFrom, yearTo, docType, language);
-  const pubmedTopic = uniqueTerms.map((term) => `${quoteSearchTerm(term)}[Title/Abstract]`).join(" OR ") || "\"systematic review\"[Title/Abstract]";
-  const pubmedQuery = `(${pubmedTopic}) AND (${yearFrom}:${yearTo}[dp])${language === "English" ? " AND English[lang]" : language === "English OR Malay" ? " AND (English[lang] OR Malay[lang])" : ""}`;
-  const ieeeQuery = `(${uniqueTerms.map(quoteSearchTerm).join(" OR ") || "\"systematic review\""}) AND Publication Year: ${yearFrom}-${yearTo}`;
-  const googleQuery = uniqueTerms.map(quoteSearchTerm).join(" OR ") || "\"systematic review\"";
-  const commonFilters = `Years ${yearFrom}-${yearTo}, ${docType}, ${language}`;
+  ];
+
+  // Subject areas
+  if (selectedSubjectAreas.length > 0) {
+    scopusFilters.push(
+      `(${selectedSubjectAreas
+        .map((code) => `SUBJAREA(${code})`)
+        .join(" OR ")})`
+    );
+  }
+
+  // Publication stage
+  if (publicationStage === "final") {
+    scopusFilters.push("PUBSTAGE(final)");
+  } else if (publicationStage === "inpress") {
+    scopusFilters.push("PUBSTAGE(aip)");
+  }
+
+  // Document type
+  if (docType === "Journal article") {
+    scopusFilters.push("DOCTYPE(ar)");
+  } else if (docType === "Review") {
+    scopusFilters.push("DOCTYPE(re)");
+  } else if (docType === "Article OR Review") {
+    scopusFilters.push("DOCTYPE(ar OR re)");
+  } else if (docType === "Article OR Conference Paper") {
+    scopusFilters.push("DOCTYPE(ar OR cp)");
+  } else if (docType === "All") {
+    // No document-type restriction
+  }
+
+  // Language
+  if (language === "English") {
+    scopusFilters.push("LANGUAGE(English)");
+  } else if (language === "Malay") {
+    scopusFilters.push("LANGUAGE(Malay)");
+  } else if (language === "English OR Malay") {
+    scopusFilters.push("LANGUAGE(English OR Malay)");
+  }
+
+  const scopusQuery =
+    `TITLE(${topic}) AND ${scopusFilters.join(" AND ")}`;
+
+  /*
+   * -------------------------
+   * WEB OF SCIENCE FILTERS
+   * -------------------------
+   */
+
+  const wosFilters: string[] = [
+    `PY=(${yearFrom}-${yearTo})`,
+  ];
+
+  // Document type
+  if (docType === "Journal article") {
+    wosFilters.push("DT=(ARTICLE)");
+  } else if (docType === "Review") {
+    wosFilters.push("DT=(REVIEW)");
+  } else if (docType === "Article OR Review") {
+    wosFilters.push("DT=(ARTICLE OR REVIEW)");
+  } else if (docType === "Article OR Conference Paper") {
+    wosFilters.push("DT=(ARTICLE OR PROCEEDINGS PAPER)");
+  }
+
+  // Language
+  if (language === "English") {
+    wosFilters.push("LA=(ENGLISH)");
+  } else if (language === "Malay") {
+    wosFilters.push("LA=(MALAY)");
+  } else if (language === "English OR Malay") {
+    wosFilters.push("LA=(ENGLISH OR MALAY)");
+  }
+
+  /*
+   * WoS subject categories are intentionally NOT converted
+   * automatically from Scopus SUBJAREA codes.
+   *
+   * This prevents invalid WoS syntax.
+   */
+  const wosQuery =
+    `${buildWebOfScienceQuery(
+      keywords,
+      yearFrom,
+      yearTo,
+      docType,
+      language
+    )}`;
+
+  const commonFilters =
+    `Years ${yearFrom}-${yearTo}, ${docType}, ${language}`;
 
   return [
     {
       database: "Scopus",
       query: scopusQuery,
-      filters: `${commonFilters}, ${selectedSubjectAreas.length > 0 ? `Subject areas: ${selectedSubjectAreas.join(", ")}` : "all subject areas"}, ${publicationStage}`,
+      filters: `${commonFilters}${
+        selectedSubjectAreas.length > 0
+          ? `, Subject areas: ${selectedSubjectAreas.join(", ")}`
+          : ", all subject areas"
+      }, ${publicationStage}`,
     },
     {
       database: "Web of Science",
       query: wosQuery,
       filters: `${commonFilters}, ${publicationStage}`,
-    },
-    {
-      database: "PubMed",
-      query: pubmedQuery,
-      filters: `${commonFilters}, ${publicationStage}`,
-    },
-    {
-      database: "IEEE Xplore",
-      query: ieeeQuery,
-      filters: `${commonFilters}, Journals & Conferences`,
-    },
-    {
-      database: "Google Scholar",
-      query: googleQuery,
-      filters: `Years ${yearFrom}-${yearTo}, ${language}`,
     },
   ];
 }

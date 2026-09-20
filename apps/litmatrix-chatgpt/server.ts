@@ -81,12 +81,166 @@ function normalizeRecord(record: RecordData, index: number): RecordData {
   };
 }
 
+/**
+ * Parse raw RIS text into RecordData objects.
+ */
+function parseRisText(text: string): RecordData[] {
+  const records: RecordData[] = [];
+  let current: Record<string, string | string[]> | null = null;
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    const match = line.match(/^([A-Z][A-Z0-9])  -\s*(.*)?$/);
+    if (match) {
+      const [, tag, value] = match;
+      if (tag === "TY") {
+        current = { studyType: value ?? "" };
+      } else if (tag === "ER") {
+        if (current) records.push(current as RecordData);
+        current = null;
+      } else if (current) {
+        if (tag === "AU" || tag === "A1" || tag === "A2") {
+          const arr = (current.authors as string[] | undefined) ?? [];
+          arr.push(value ?? "");
+          current.authors = arr;
+        } else if (tag === "TI" || tag === "T1") {
+          current.title = (current.title ? `${current.title} ` : "") + (value ?? "");
+        } else if (tag === "AB" || tag === "N2") {
+          current.abstract = (current.abstract ? `${current.abstract} ` : "") + (value ?? "");
+        } else if (tag === "PY" || tag === "Y1") {
+          current.year = current.year ?? (value ?? "").split("/")[0];
+        } else if (tag === "DO") {
+          current.doi = value ?? "";
+        } else if (tag === "JO" || tag === "JF" || tag === "T2") {
+          current.journal = current.journal ?? (value ?? "");
+        } else if (tag === "SN") {
+          current.issn = value ?? "";
+        } else if (tag === "VL") {
+          current.volume = value ?? "";
+        } else if (tag === "SP") {
+          current.startPage = value ?? "";
+        } else if (tag === "EP") {
+          current.endPage = value ?? "";
+        } else if (tag === "UR" || tag === "L2") {
+          current.url = current.url ?? (value ?? "");
+        } else if (tag === "DB") {
+          current.databaseSource = value ?? "";
+        }
+      }
+    }
+  }
+  if (current) records.push(current as RecordData);
+  return records;
+}
+
+/**
+ * Parse raw BibTeX text into RecordData objects.
+ */
+function parseBibTeXText(text: string): RecordData[] {
+  const records: RecordData[] = [];
+  const entryRegex = /@\w+\{[^,]*,([\s\S]*?)\n\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = entryRegex.exec(text)) !== null) {
+    const body = m[1];
+    const getField = (name: string) => {
+      const r = new RegExp(`\\b${name}\\s*=\\s*[{"](.*?)["}]`, "is");
+      return body.match(r)?.[1]?.trim() ?? "";
+    };
+    const authorRaw = getField("author");
+    const authors = authorRaw ? authorRaw.split(" and ").map((a) => a.trim()) : [];
+    records.push({
+      title: getField("title"),
+      authors,
+      year: getField("year"),
+      abstract: getField("abstract"),
+      journal: getField("journal") || getField("booktitle"),
+      doi: getField("doi"),
+      url: getField("url"),
+      volume: getField("volume"),
+      issn: getField("issn"),
+    } as RecordData);
+  }
+  return records;
+}
+
+/**
+ * Parse CSV text (first row = headers) into RecordData objects.
+ * Handles common Scopus / WoS CSV exports.
+ */
+function parseCsvText(text: string): RecordData[] {
+  const lines = text.split(/\r?\n/);
+  if (lines.length < 2) return [];
+
+  function tokenise(line: string): string[] {
+    const out: string[] = [];
+    let inQ = false;
+    let cur = "";
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = !inQ;
+      } else if (ch === "," && !inQ) {
+        out.push(cur.trim()); cur = "";
+      } else {
+        cur += ch;
+      }
+    }
+    out.push(cur.trim());
+    return out;
+  }
+
+  const headers = tokenise(lines[0]).map((h) => h.toLowerCase().replace(/\s+/g, "_"));
+  const col = (row: string[], name: string) => {
+    const i = headers.indexOf(name);
+    return i >= 0 ? (row[i] ?? "").trim() : "";
+  };
+
+  const records: RecordData[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const row = tokenise(lines[i]);
+    const title =
+      col(row, "title") ||
+      col(row, "article_title") ||
+      col(row, "document_title");
+    if (!title) continue;
+    const authorRaw =
+      col(row, "authors") ||
+      col(row, "author") ||
+      col(row, "au");
+    const authors = authorRaw
+      ? authorRaw.split(";").map((a) => a.trim()).filter(Boolean)
+      : [];
+    records.push({
+      title,
+      authors,
+      year: col(row, "year") || col(row, "publication_year") || col(row, "py"),
+      abstract: col(row, "abstract") || col(row, "ab"),
+      journal: col(row, "source_title") || col(row, "journal") || col(row, "publication_name"),
+      doi: col(row, "doi") || col(row, "article_doi"),
+      databaseSource: col(row, "source") || col(row, "database"),
+    } as RecordData);
+  }
+  return records;
+}
+
+/**
+ * Auto-detect citation format (RIS / BibTeX / CSV) and parse.
+ */
+function parseCitationText(raw: string): RecordData[] {
+  const t = raw.trimStart();
+  if (/^TY  - /m.test(t)) return parseRisText(t);
+  if (/^@\w+\{/m.test(t)) return parseBibTeXText(t);
+  return parseCsvText(t);
+}
+
 export function createServer(owner: AuthUser): McpServer {
   const server = new McpServer({ name: "LitlMatrix", version: "0.9.1" });
 
   registerLitmatrixAppTool(server, "litmatrix_start_review", {
     title: "Start LitlMatrix Review",
-    description: "Create a LitlMatrix systematic review workspace. The ChatGPT host performs AI reasoning; LitlMatrix stores and bounds the researcher-supplied evidence.",
+    description: "ALWAYS call this first before any other LitlMatrix tool. Creates a new systematic review workspace and returns a reviewId (format: lm_<timestamp>_<random>). Store the returned reviewId — it is required by every other LitlMatrix tool. Do NOT use the user ID or any other value as the reviewId. The ChatGPT host performs AI reasoning; LitlMatrix stores and bounds the researcher-supplied evidence.",
     inputSchema: z.object({
       title: z.string().optional(),
       protocol: z.record(z.string(), z.unknown()).optional(),
@@ -138,6 +292,41 @@ export function createServer(owner: AuthUser): McpServer {
     };
   });
 
+  registerLitmatrixAppTool(server, "litmatrix_import_ris", {
+    title: "Import Records from RIS / BibTeX / CSV Text",
+    description: "Use this tool when the researcher has attached or pasted a RIS, BibTeX, or CSV export from Scopus, Web of Science, PubMed, or another database. Pass the entire raw file text as the 'text' field. The server parses the format automatically and stores up to 200 unique records in the review. Do NOT attempt to manually convert to JSON before calling this tool.",
+    inputSchema: z.object({
+      reviewId: z.string(),
+      text: z.string().min(10).describe("The complete raw content of the RIS, BibTeX, or CSV citation file."),
+      protocol: z.record(z.string(), z.unknown()).optional(),
+    }),
+  }, async ({ reviewId, text, protocol }) => {
+    const review = await getReview(reviewId, owner);
+    const parsed = parseCitationText(text);
+    if (!parsed.length) {
+      return {
+        content: [{ type: "text", text: "Could not parse any citation records from the provided text. Ensure the text is a valid RIS, BibTeX, or CSV export." }],
+        structuredContent: { reviewId, recordCount: 0, error: "no_records_parsed" },
+      };
+    }
+    const normalized = parsed.map(normalizeRecord).filter((r: RecordData) => String(r.title ?? "").trim());
+    const seen = new Set<string>();
+    review.records = normalized.filter((record: RecordData) => {
+      const key = String(record.doi ?? "").trim().toLowerCase() || `${String(record.title).trim().toLowerCase()}|${String(record.year ?? "").trim()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 200);
+    review.decisions = [];
+    if (protocol) review.protocol = protocol;
+    await persistReview(reviewId, review, owner);
+    return {
+      content: [{ type: "text", text: `Parsed and imported ${review.records.length} researcher-supplied records into review ${reviewId} from the provided ${text.trimStart().startsWith("@") ? "BibTeX" : /^TY  - /m.test(text) ? "RIS" : "CSV"} file.` }],
+      structuredContent: { reviewId, recordCount: review.records.length, parsed: parsed.length },
+    };
+  });
+
+
   registerLitmatrixAppTool(server, "litmatrix_set_criteria", {
     title: "Set Review Criteria",
     description: "Store review terms supplied by the researcher. They are used for deterministic local evidence selection only.",
@@ -151,7 +340,7 @@ export function createServer(owner: AuthUser): McpServer {
 
   registerLitmatrixAppTool(server, "litmatrix_select_evidence", {
     title: "Select Evidence Locally",
-    description: "Deterministically select up to 100 title-relevant records, then up to 50 detailed evidence records. This tool never calls an AI provider and never adds external records.",
+    description: "Deterministically select up to 100 title-relevant records, then up to 50 detailed evidence records. This tool never calls an AI provider and never adds external records. The reviewId must be a value previously returned by litmatrix_start_review (format: lm_<timestamp>_<random>).",
     inputSchema: z.object({ reviewId: z.string() }),
   }, async ({ reviewId }) => {
     const review = await getReview(reviewId, owner);
@@ -320,7 +509,7 @@ export function createServer(owner: AuthUser): McpServer {
 
   registerLitmatrixAppTool(server, "litmatrix_status", {
     title: "LitlMatrix Status",
-    description: "Return the current record, screening, and evidence-budget counts for a LitlMatrix review.",
+    description: "Return the current record, screening, and evidence-budget counts for a LitlMatrix review. The reviewId must be a value previously returned by litmatrix_start_review (format: lm_<timestamp>_<random>). Do NOT use the authenticated user ID as the reviewId.",
     inputSchema: z.object({ reviewId: z.string() }),
   }, async ({ reviewId }) => {
     const review = await getReview(reviewId, owner);

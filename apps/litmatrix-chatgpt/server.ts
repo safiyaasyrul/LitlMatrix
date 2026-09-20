@@ -265,10 +265,10 @@ export function createServer(owner: AuthUser): McpServer {
 
   registerLitmatrixAppTool(server, "litmatrix_import_records", {
     title: "Import Review Records",
-    description: "Store only citation records supplied by the researcher. No external literature is added. The review supports up to 200 records in the evidence workflow.",
+    description: "Store only citation records supplied by the researcher. No external literature is added. The review supports unlimited imported records, which will be narrowed down in later steps.",
     inputSchema: z.object({
       reviewId: z.string(),
-      records: z.array(z.record(z.string(), z.unknown())).min(1).max(200),
+      records: z.array(z.record(z.string(), z.unknown())).min(1),
       characteristics: z.array(z.record(z.string(), z.unknown())).max(200).optional(),
       protocol: z.record(z.string(), z.unknown()).optional(),
     }),
@@ -281,7 +281,7 @@ export function createServer(owner: AuthUser): McpServer {
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    }).slice(0, 200);
+    });
     review.decisions = [];
     if (characteristics) review.characteristics = characteristics;
     if (protocol) review.protocol = protocol;
@@ -294,7 +294,7 @@ export function createServer(owner: AuthUser): McpServer {
 
   registerLitmatrixAppTool(server, "litmatrix_import_ris", {
     title: "Import Records from RIS / BibTeX / CSV Text",
-    description: "Use this tool when the researcher has attached or pasted a RIS, BibTeX, or CSV export from Scopus, Web of Science, PubMed, or another database. Pass the entire raw file text as the 'text' field. The server parses the format automatically and stores up to 200 unique records in the review. Do NOT attempt to manually convert to JSON before calling this tool.",
+    description: "Use this tool when the researcher has attached or pasted a RIS, BibTeX, or CSV export from Scopus, Web of Science, PubMed, or another database. Pass the entire raw file text as the 'text' field. The server parses the format automatically and stores all unique records in the review. Do NOT attempt to manually convert to JSON before calling this tool.",
     inputSchema: z.object({
       reviewId: z.string(),
       text: z.string().min(10).describe("The complete raw content of the RIS, BibTeX, or CSV citation file."),
@@ -316,7 +316,7 @@ export function createServer(owner: AuthUser): McpServer {
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    }).slice(0, 200);
+    });
     review.decisions = [];
     if (protocol) review.protocol = protocol;
     await persistReview(reviewId, review, owner);

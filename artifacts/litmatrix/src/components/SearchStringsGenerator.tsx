@@ -569,83 +569,95 @@ Construct reproducible database-specific Boolean search strings.
 
 CRITICAL RULES:
 
-1. The user's accepted keywords are the ONLY topic terms that may be used.
-2. Do not introduce unrelated concepts, generic terms, or external literature.
-3. Group synonyms belonging to the same concept with OR.
-4. Connect distinct concepts with AND.
-5. Do not simply combine every keyword with OR.
-6. Preserve the meaning and scope of the review title.
-7. Apply ALL user-selected search limits exactly:
-   - publication year: ${yearFrom}-${yearTo}
-   - language: ${language}
-   - publication type: ${docType}
-   - publication stage: ${stageDesc}
-   - subject area: ${subjectAreasDesc}
-8. Do not omit any selected filter.
-9. Do not put year, language, document type, publication stage,
-   or subject-area terms inside the topic keyword blocks.
-10. Use database-specific syntax only.
+Construct TWO reproducible, database-specific Boolean search strings ONLY:
+
+1. Scopus
+2. Web of Science Core Collection
+
+Do NOT generate PubMed, IEEE Xplore, Google Scholar, ACM,
+or any other database.
+
+SEARCH SCOPE RULES:
+
+- Use ONLY the accepted keywords supplied by the researcher.
+- Do not introduce unrelated topics.
+- Do not add external literature.
+- Group synonyms belonging to the same concept using OR.
+- Connect distinct concepts using AND.
+- Preserve the meaning and scope of the review title.
+- Avoid generic terms that create excessive irrelevant results.
+
+MANDATORY SEARCH LIMITS:
+
+Year:
+${yearFrom}-${yearTo}
+
+Language:
+${language}
+
+Document type:
+${docType}
+
+Publication stage:
+${stageDesc}
+
+Subject areas:
+${subjectAreasDesc}
 
 SCOPUS:
-- Use TITLE(...)
-- Year: PUBYEAR > ${yearFrom - 1} AND PUBYEAR < ${yearTo + 1}
-- Language: LANGUAGE(...)
-- Document type: DOCTYPE(...)
-- Publication stage: PUBSTAGE(...) when applicable
-- Subject area: SUBJAREA(...) when selected
+
+Use:
+TITLE(...)
+
+Apply:
+PUBYEAR > ${yearFrom - 1}
+PUBYEAR < ${yearTo + 1}
+
+Apply document type using valid DOCTYPE codes.
+
+Apply language using LANGUAGE(...).
+
+Apply PUBSTAGE only when required.
+
+Apply SUBJAREA only when subject areas are selected.
 
 WEB OF SCIENCE:
-- Use TI=(...)
-- Year: PY=(${yearFrom}-${yearTo})
-- Language: LA=(...)
-- Document type: DT=(...)
-- Do not use Scopus field tags.
 
-PUBMED:
-- Use Title/Abstract and MeSH Terms where appropriate.
-- Apply publication date and language filters.
+Use:
+TI=(...)
 
-IEEE XPLORE:
-- Use IEEE-supported field syntax.
-- Apply publication year and document-type limits where supported.
+Apply:
+PY=(${yearFrom}-${yearTo})
 
-GOOGLE SCHOLAR:
-- Generate the topic Boolean string only.
-- Do not pretend that unsupported database operators such as
-  Scopus DOCTYPE or WoS DT work in Google Scholar.
-- Report year/language/type as interface filters rather than
-  embedding unsupported syntax.
+Apply document type using valid WoS DT values.
 
-Return ONLY a compact JSON array of objects with the exact schema. Do not use Markdown fences or explanatory text.
-Keep every query on one line. Any double quotes inside a query string must be escaped for JSON (for example: "query": "TS=(\\"diabetes\\" OR \\"diabetic\\")").
+Apply:
+LA=(...)
+
+Do NOT use Scopus field codes in WoS.
+
+Do NOT use TS= because LitMatrix is intentionally using title-focused
+searching.
+
+CRITICAL:
+
+Every selected search limit must appear in the appropriate database
+query unless that database does not support that filter syntax.
+
+Return ONLY:
+
 [
   {
     "database": "Scopus",
-    "query": "TITLE(...)",
-    "filters": "Years ${yearFrom}-${yearTo}, ${subjectAreasDesc}, ${stageDesc}, ${docType}, ${language}"
+    "query": "...",
+    "filters": "..."
   },
   {
     "database": "Web of Science",
-    "query": "TI=(...)",
-    "filters": "Years ${yearFrom}-${yearTo}, ${subjectAreasDesc}, ${stageDesc}, ${docType}, ${language}"
-  },
-  {
-    "database": "PubMed",
-    "query": "(...[Title/Abstract] OR ...[MeSH Terms])",
-    "filters": "Years ${yearFrom}-${yearTo}, ${stageDesc}, ${docType}, ${language}"
-  },
-  {
-    "database": "IEEE Xplore",
     "query": "...",
-    "filters": "Years ${yearFrom}-${yearTo}, Journals & Conferences"
-  },
-  {
-    "database": "Google Scholar",
-    "query": "...",
-    "filters": "Years ${yearFrom}-${yearTo}, ${language}"
+    "filters": "..."
   }
-]`;
-
+]
       const text = await callAI(prompt, "You are a professional research librarian and Boolean search string engineer. Return syntactically valid JSON only.", aiConfig, 4000);
       const parsedStrategies = extractSearchStrategies(parseJSONLoose(text));
       const fallbackStrategies = buildFallbackSearchStrategies(

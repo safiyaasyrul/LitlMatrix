@@ -65,10 +65,69 @@ function buildWebOfScienceQuery(
   docType: string,
   language: string,
 ): string {
-  const selected = keywords
-    .filter((keyword) => keyword.selected && keyword.term.trim())
-    .map((keyword) => keyword.term.trim().replace(/["()]/g, "").replace(/\s+/g, " "))
+
+  const conceptBlocks = Array.from(
+    new Set(
+      keywords
+        .filter((keyword) => keyword.selected && keyword.term.trim())
+        .map((keyword) => keyword.category)
+    )
+  )
+    .map((category) => {
+      const terms = keywords
+        .filter(
+          (keyword) =>
+            keyword.selected &&
+            keyword.term.trim() &&
+            keyword.category === category
+        )
+        .map((keyword) =>
+          `"${keyword.term
+            .trim()
+            .replace(/["()]/g, "")
+            .replace(/\s+/g, " ")}"`
+        );
+
+      return terms.length > 0
+        ? `(${Array.from(new Set(terms)).join(" OR ")})`
+        : "";
+    })
     .filter(Boolean);
+
+  const topic =
+    conceptBlocks.length >= 2
+      ? conceptBlocks.join(" AND ")
+      : `(${
+          keywords
+            .filter((k) => k.selected && k.term.trim())
+            .map((k) => `"${k.term.trim()}"`)
+            .join(" OR ") || "\"systematic review\""
+        })`;
+
+  const filters: string[] = [
+    `PY=(${yearFrom}-${yearTo})`,
+  ];
+
+  if (docType === "Journal article") {
+    filters.push("DT=(ARTICLE)");
+  } else if (docType === "Review") {
+    filters.push("DT=(REVIEW)");
+  } else if (docType === "Article OR Review") {
+    filters.push("DT=(ARTICLE OR REVIEW)");
+  } else if (docType === "Article OR Conference Paper") {
+    filters.push("DT=(ARTICLE OR PROCEEDINGS PAPER)");
+  }
+
+  if (language === "English") {
+    filters.push("LA=(ENGLISH)");
+  } else if (language === "Malay") {
+    filters.push("LA=(MALAY)");
+  } else if (language === "English OR Malay") {
+    filters.push("LA=(ENGLISH OR MALAY)");
+  }
+
+  return `TI=${topic} AND ${filters.join(" AND ")}`;
+}
 
   const uniqueTerms = Array.from(new Set(selected));
   const topic = uniqueTerms.length > 0

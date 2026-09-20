@@ -1,7 +1,7 @@
 import { SLRRecord, StudyCharacteristic, SLRProtocol } from "../types/slr";
 
-const MAX_INTRODUCTION_RECORDS = 100;
-const MAX_DETAILED_RECORDS = 50;
+export const MAX_INTRODUCTION_RECORDS = 100;
+export const MAX_DETAILED_RECORDS = 100;
 
 const STOP_WORDS = new Set([
   "about",
@@ -199,9 +199,11 @@ export const selectIntroductionRecords = (
 export const selectDetailedEvidenceRecords = (
   records: SLRRecord[],
   characteristics: StudyCharacteristic[],
-  protocol?: SLRProtocol
+  protocol?: SLRProtocol,
+  maxLimit: number = MAX_DETAILED_RECORDS
 ): SLRRecord[] => {
-  if (records.length <= MAX_DETAILED_RECORDS) {
+  const boundedLimit = Math.max(1, Math.min(100, maxLimit));
+  if (records.length <= boundedLimit) {
     return [...records];
   }
 
@@ -362,31 +364,35 @@ export const selectDetailedEvidenceRecords = (
         b.score - a.score ||
         a.originalIndex - b.originalIndex
     )
-    .slice(0, MAX_DETAILED_RECORDS)
+    .slice(0, boundedLimit)
     .map((item) => item.record);
 };
 
 /**
  * Convenience function used by synthesis.
  *
- * 200 → 100 → 50
+ * 200 → 100 → 100 (configurable)
  */
 export const buildEvidenceBudget = (
   records: SLRRecord[],
   characteristics: StudyCharacteristic[],
-  protocol?: SLRProtocol
+  protocol?: SLRProtocol,
+  options: { maxIntroduction?: number; maxDetailed?: number } = {}
 ) => {
+  const maxIntro = options.maxIntroduction ?? MAX_INTRODUCTION_RECORDS;
+  const maxDet = options.maxDetailed ?? MAX_DETAILED_RECORDS;
   const introductionRecords =
     selectIntroductionRecords(
       records,
       protocol
-    );
+    ).slice(0, maxIntro);
 
   const detailedRecords =
     selectDetailedEvidenceRecords(
       introductionRecords,
       characteristics,
-      protocol
+      protocol,
+      maxDet
     );
 
   return {

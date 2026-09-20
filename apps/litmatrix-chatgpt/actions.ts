@@ -131,7 +131,7 @@ export function createActionsRouter() {
       const context = { criteria: review.criteria, protocol: review.protocol };
       const introduction = selectIntroductionRecords(review.records, context);
       const detailed = selectDetailedRecords(introduction, review.characteristics, context);
-      res.json({ reviewId, allRecordCount: review.records.length, introductionRecordCount: introduction.length, detailedRecordCount: detailed.length, limits: { introduction: 100, detailed: 50 }, introduction, detailed });
+      res.json({ reviewId, allRecordCount: review.records.length, introductionRecordCount: introduction.length, detailedRecordCount: detailed.length, limits: { introduction: 100, detailed: 100 }, introduction, detailed });
     } catch (error) {
       console.error("Action select-evidence error", error);
       res.status(500).json({ error: "internal_error", message: "Unable to select evidence." });
@@ -198,7 +198,7 @@ export function createActionsRouter() {
     if (!owner) return;
     try {
       const body = (req.body ?? {}) as { reviewId?: string; characteristics?: RecordData[] };
-      if (!body.reviewId || !Array.isArray(body.characteristics) || body.characteristics.length > 50) return res.status(400).json({ error: "invalid_request", message: "reviewId and up to 50 characteristics are required." });
+      if (!body.reviewId || !Array.isArray(body.characteristics) || body.characteristics.length > 100) return res.status(400).json({ error: "invalid_request", message: "reviewId and up to 100 characteristics are required." });
       const review = await getReview(body.reviewId, owner);
       const allowedIds = new Set(review.records.map((r) => String(r.id)));
       const accepted = body.characteristics.filter((c) => allowedIds.has(String(c.recordId ?? c.id ?? "")));
@@ -224,10 +224,78 @@ export function createActionsRouter() {
       const introductionEvidence = selectIntroductionRecords(review.records, context);
       const detailedEvidence = selectDetailedRecords(introductionEvidence, review.characteristics, context);
       const included = review.decisions.filter((d) => d.decision === "include" || Number(d.score) >= 50);
-      res.json({ reviewId, title: review.title, protocol: review.protocol, totalRecords: review.records.length, decisions: review.decisions, includedDecisionCount: included.length, unresolvedCount: review.records.length - review.decisions.length, introductionEvidence, detailedEvidence, characteristics: review.characteristics, citationStyleOptions: ["APA 7th", "IEEE", "Vancouver", "Harvard"], evidenceLimits: { introduction: 100, title: 50, results: 50, characteristics: 50, synthesis: 50, discussion: 50 }, rules: ["Use only the supplied records and stored study characteristics.", "Do not introduce external papers, citations, authors, findings, statistics, or facts.", "Do not claim to have analyzed records that were not supplied to the current operation.", "If evidence is insufficient, say that it is insufficient rather than inventing support."] });
+      res.json({ reviewId, title: review.title, protocol: review.protocol, totalRecords: review.records.length, decisions: review.decisions, includedDecisionCount: included.length, unresolvedCount: review.records.length - review.decisions.length, introductionEvidence, detailedEvidence, characteristics: review.characteristics, citationStyleOptions: ["APA 7th", "IEEE", "Vancouver", "Harvard"], evidenceLimits: { introduction: 100, title: 100, results: 100, characteristics: 100, synthesis: 100, discussion: 100 }, rules: ["Use only the supplied records and stored study characteristics.", "Do not introduce external papers, citations, authors, findings, statistics, or facts.", "Do not claim to have analyzed records that were not supplied to the current operation.", "If evidence is insufficient, say that it is insufficient rather than inventing support."] });
     } catch (error) {
       console.error("Action manuscript-package error", error);
       res.status(500).json({ error: "internal_error", message: "Unable to build manuscript package." });
+    }
+  });
+
+  router.post("/prisma", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const body = (req.body ?? {}) as { reviewId?: string; overrides?: Record<string, unknown> };
+      if (!body.reviewId) return res.status(400).json({ error: "invalid_request", message: "reviewId is required." });
+      const review = await getReview(body.reviewId, owner);
+
+      const dbCounts = new Map<string, number>();
+      for (const rec of review.records) {
+        const src = String(rec.databaseSource ?? rec.source ?? "Scopus").trim() || "Scopus";
+        dbCounts.set(src, (dbCounts.get(src) || 0) + 1);
+      }
+      const databases = dbCounts.size > 0
+        ? Array.from(dbCounts.entries()).map(([name, recordsIdentified]) => ({ name, recordsIdentified }))
+        : [{ name: "Scopus", recordsIdentified: review.records.length }];
+
+      const excluded = review.decisions.filter((d) => d.decision === "exclude" || (Number(d.score) < 50 && d.decision !== "include"));
+      const included = review.decisions.filter((d) => d.decision === "include" || (Number(d.score) >= 50 && d.decision !== "exclude"));
+
+      const reasonsMap = new Map<string, number>();
+      for (const d of excluded) {
+        const reason = String(d.exclusionReason ?? d.reason ?? "Other");
+        reasonsMap.set(reason, (reasonsMap.get(reason) || 0) + 1);
+      }
+
+      const overrides = body.overrides || {};
+      const prismaData = {
+        reviewId: body.reviewId,
+        identification: {
+          databases: (overrides.databases as any) ?? databases,
+          otherSources: Number(overrides.otherSources ?? 0),
+        },
+        removedBeforeScreening: {
+          duplicates: Number(overrides.duplicates ?? 0),
+          automation: Number(overrides.automation ?? 0),
+          otherReasons: Number(overrides.otherReasons ?? 0),
+        },
+        screening: {
+          recordsScreened: Number(overrides.recordsScreened ?? review.records.length),
+          recordsExcluded: Number(overrides.recordsExcluded ?? excluded.length),
+        },
+        eligibility: {
+          reportsSought: overrides.reportsSought !== undefined ? (overrides.reportsSought as number | null) : null,
+          reportsNotRetrieved: overrides.reportsNotRetrieved !== undefined ? (overrides.reportsNotRetrieved as number | null) : null,
+          reportsAssessed: overrides.reportsAssessed !== undefined ? (overrides.reportsAssessed as number | null) : null,
+          reportsExcluded: Number(overrides.reportsExcluded ?? 0),
+          exclusionReasons: (overrides.exclusionReasons as any) ?? Array.from(reasonsMap.entries()).map(([reason, count]) => ({ reason, count })),
+        },
+        included: {
+          studiesIncluded: Number(overrides.studiesIncluded ?? included.length),
+          studiesIncludedInSynthesis: Number(overrides.studiesIncludedInSynthesis ?? Math.min(included.length, review.characteristics.length || included.length, 100)),
+        },
+        evidenceLimits: {
+          maximumEvidencePool: 100,
+          maximumCharacteristics: 100,
+          maximumThematicAnalysis: 100,
+          maximumSynthesis: 100,
+        },
+      };
+
+      res.json(prismaData);
+    } catch (error) {
+      console.error("Action prisma error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to calculate PRISMA data." });
     }
   });
 
@@ -245,7 +313,7 @@ export function createActionsRouter() {
       let action: string; let instruction: string;
       if (!review.records.length) { action = "import_records"; instruction = "Import the researcher-supplied Scopus/WoS records before doing AI analysis."; }
       else if (unresolved > 0) { action = "screen_batch"; instruction = "Get a screening batch and screen only the returned records using supplied title/abstract and stored criteria. Save decisions before requesting another batch."; }
-      else if (!review.characteristics.length) { action = "extract_characteristics"; instruction = "Use the detailed evidence set (maximum 50 records) to extract study characteristics and save them."; }
+      else if (!review.characteristics.length) { action = "extract_characteristics"; instruction = "Use the detailed evidence set (maximum 100 records) to extract study characteristics and save them."; }
       else { action = "draft_manuscript"; instruction = "Get the manuscript evidence package and draft the requested section using only its bounded evidence."; }
       res.json({ reviewId, action, instruction, counts: { records: review.records.length, unresolved, characteristics: review.characteristics.length, introduction: introduction.length, detailed: detailed.length } });
     } catch (error) {

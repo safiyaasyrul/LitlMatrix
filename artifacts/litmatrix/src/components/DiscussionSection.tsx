@@ -111,11 +111,11 @@ STRICT WRITING RULES:
 5. CITE AND DISCUSS THE ACTUAL INCLUDED STUDIES by author and year (e.g. Chen et al., 2023). Within each category, discuss authors who share similarities and contrast their results.
 6. Never invent or infer pooled effects, confidence intervals, significance, reviewer activity, full-text assessment, search coverage, validation, or findings absent from the supplied data. Do not describe the application, the review workspace, or the supplied records as deficient.
 
-Structure the response into 4 distinct sections:
-1. item23aGeneralInterpretation: Deep interpretation of findings directly citing included studies, grouping by category, discussing similarities among authors in the same category, and contextualizing within existing literature.
-2. item23bLimitationsOfEvidence: Critical evaluation of limitations within the included studies (e.g., experimental setups, sample/data adequacy, measurement limitations, lack of external validation).
+Structure the response into 4 distinct sections (each section should be approximately 600-800 words to target a 10-12 page final manuscript):
+1. item23aGeneralInterpretation: Deep, expansive interpretation of findings directly citing included studies, grouping by category, discussing similarities among authors in the same category, and contextualizing extensively within existing literature.
+2. item23bLimitationsOfEvidence: Critical, detailed evaluation of limitations within the included studies (e.g., experimental setups, sample/data adequacy, measurement limitations, lack of external validation).
 3. item23cLimitationsOfReviewProcess: Neutral methodological context describing the predefined scope, eligibility criteria, screening approach, and narrative or thematic organization. Do not list missing databases, search dates, language restrictions, reviewer actions, or unavailable verification steps.
-4. item23dImplications: Cautious implications for practice and future research appropriate to the review topic.
+4. item23dImplications: Cautious, comprehensive implications for practice, policy, and future research appropriate to the review topic.
 
 Return ONLY a JSON object:
 {

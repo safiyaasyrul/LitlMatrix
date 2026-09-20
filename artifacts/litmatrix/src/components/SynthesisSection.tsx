@@ -266,7 +266,7 @@ const buildFallbackSubtopics = (studies: SynthesisStudy[]) => {
 
   return [{
     title: "Included Evidence",
-    prose: limitWords(buildFallbackNarrative(studies), 180),
+    prose: limitWords(buildFallbackNarrative(studies), 1500),
     supportingRecordIds: studies.map((study) => study.recordId),
   }];
 };
@@ -289,7 +289,7 @@ const sanitizeSubtopics = (
         .split(/\s+/)
         .slice(0, 6)
         .join(" "),
-      prose: limitWords(item?.prose, 180),
+      prose: limitWords(item?.prose, 1500),
       supportingRecordIds: Array.isArray(item?.supportingRecordIds)
         ? Array.from(
             new Set<string>(
@@ -332,9 +332,10 @@ The objective is not to summarize every study individually. The objective is to 
 
 Create approximately 1–5 distinct themes when the evidence supports them. Do
 not manufacture themes to reach a target. Keep each heading to a concise
-2–6-word noun phrase and each thematic narrative to approximately 150–250
-words. The complete Section 3.4 should remain approximately 600–1,000 words
-maximum and should be shorter when the evidence is limited.
+2–6-word noun phrase. Expand each thematic narrative to approximately 600–900
+words through substantive synthesis, deep comparison of studies, and methodological
+analysis. The complete Section 3.4 should target approximately 3000–4500 words
+to support a final comprehensive manuscript length of 10-12 pages.
 
 A study may contribute to more than one theme when its supplied information supports that interpretation.
 

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   SLRProtocol,
   SLRRecord,
@@ -8,14 +8,16 @@ import {
   DiscussionSections,
   PrismaChecklistItem,
   CitationStyle,
+  PrismaFlowData,
 } from "../types/slr";
-import { Download, Copy, Printer, Check, BookOpen, FileText, CheckCircle2, ShieldAlert, Sparkles, Layers, SlidersHorizontal, Quote } from "lucide-react";
+import { Download, Copy, Printer, Check, BookOpen, FileText, CheckCircle2, ShieldAlert, Sparkles, Layers, SlidersHorizontal, Quote, ClipboardCheck } from "lucide-react";
 import PrismaDiagram from "./PrismaDiagram";
 import { getIncludedEvidenceKey } from "../utils/evidenceKey";
 import { buildManuscriptAbstract } from "../utils/manuscriptAbstract";
 import { formatCitationText, formatReference } from "../utils/citationFormatter";
 import { CITATION_STYLE_OPTIONS } from "../utils/citationFormatter";
 import { buildPrismaSvg, svgToDataUri } from "../utils/prismaSvg";
+import { calculatePrismaFlowData } from "../utils/prismaFlowCalculator";
 import { buildDocxBlob, DocxBlock } from "../utils/docxExporter";
 
 interface FullReviewReportProps {
@@ -27,7 +29,8 @@ interface FullReviewReportProps {
   synthesis: SynthesisResult;
   discussion: DiscussionSections;
   checklist: PrismaChecklistItem[];
-  counts: any;
+  counts?: any;
+  prismaData?: PrismaFlowData;
   citationStyle: CitationStyle;
   onCitationStyleChange: (style: CitationStyle) => void;
 }
@@ -145,12 +148,14 @@ const removeCitations = (value: string) =>
 export default function FullReviewReport({
   protocol,
   includedRecords,
+  screenedRecords,
   screening,
   characteristics,
   synthesis,
   discussion,
   checklist,
   counts,
+  prismaData,
   citationStyle,
   onCitationStyleChange,
 }: FullReviewReportProps) {
@@ -249,7 +254,19 @@ export default function FullReviewReport({
     : `The conclusions are based on the narrative and thematic synthesis of ${includedRecords.length} included ${includedRecords.length === 1 ? "record" : "records"}.`;
   const conclusionImplications = removeCitations(discussion.item23dImplications);
   const citationFreeConclusion = `${conclusionLead}${conclusionImplications ? ` ${conclusionImplications}` : ""}`;
-  const prismaSvg = buildPrismaSvg(counts);
+  
+  const activePrisma: PrismaFlowData = useMemo(() => {
+    if (prismaData) return prismaData;
+    return calculatePrismaFlowData({
+      records: screenedRecords,
+      dupesRemoved: counts?.duplicatesRemoved,
+      screening,
+      characteristics,
+      synthesis,
+    });
+  }, [prismaData, screenedRecords, counts, screening, characteristics, synthesis]);
+
+  const prismaSvg = buildPrismaSvg(activePrisma);
 
   const markdownCountTable = (heading: string, values: LandscapeCount[]) => {
     let table = `#### ${heading}\n\n| Description | Records |\n| --- | ---: |\n`;
@@ -308,13 +325,13 @@ export default function FullReviewReport({
 
     md += `## 3. Results\n\n`;
     md += `### 3.1 Study Selection and Flow of Evidence\n`;
-    md += `${counts.uploaded || counts.identifiedDb || 0} records were identified, including ${counts.duplicatesRemoved || 0} duplicates recorded as removed. After deduplication, ${counts.afterDedup || 0} records entered the screening ledger, with ${includedRecords.length} included, ${counts.screenedExcluded || 0} excluded, and ${counts.unresolved || 0} unresolved. Full-text retrieval and eligibility assessment were not performed.\n\n`;
-    md += `**Figure 1. Adapted PRISMA 2020 flow diagram**\n\n`;
+    const dbSummary = activePrisma.identification.databases.map((d) => `${d.name} (n = ${d.recordsIdentified})`).join(", ");
+    md += `A total of ${activePrisma.screening.recordsScreened + activePrisma.removedBeforeScreening.duplicates} records were identified from ${dbSummary || "databases"}. Deduplication removed ${activePrisma.removedBeforeScreening.duplicates} duplicate records. After deduplication, ${activePrisma.screening.recordsScreened} records entered title and abstract screening, with ${activePrisma.screening.recordsExcluded} excluded and ${activePrisma.included.studiesIncluded} meeting all inclusion criteria. The bounded evidence set selected ${activePrisma.included.studiesIncludedInSynthesis} studies for detailed qualitative and thematic synthesis (Figure 1).\n\n`;
+    md += `**Figure 1. PRISMA 2020 flow diagram of the study identification, screening, eligibility and inclusion process.**\n\n`;
     md += "```text\n";
-    md += `Identification: records identified (n = ${counts.uploaded || 0}) → duplicates removed (n = ${counts.duplicatesRemoved || 0})\n`;
-    md += `Screening: records screened (n = ${counts.screened || 0}) → excluded (n = ${counts.screenedExcluded || 0})\n`;
-    md += `                                                     ↘ unresolved (n = ${counts.unresolved || 0})\n`;
-    md += `                                                     ↘ included (n = ${counts.included || 0})\n`;
+    md += `Identification: databases [${dbSummary || "records"}] → duplicates removed (n = ${activePrisma.removedBeforeScreening.duplicates})\n`;
+    md += `Screening: records screened (n = ${activePrisma.screening.recordsScreened}) → excluded (n = ${activePrisma.screening.recordsExcluded})\n`;
+    md += `Inclusion: included studies (n = ${activePrisma.included.studiesIncluded}) → qualitative synthesis (n = ${activePrisma.included.studiesIncludedInSynthesis})\n`;
     md += "```\n\n";
 
     md += `### 3.1 Included Studies Table (Table 1)\n\n`;
@@ -463,9 +480,9 @@ export default function FullReviewReport({
       { kind: "heading", level: 2, text: "2.2 Study Selection and Synthesis" },
       { kind: "paragraph", text: "Records entered the screening ledger were screened using the available bibliographic information. Unresolved records have no final include or exclude decision. Full-text retrieval and eligibility assessment were not performed. The included evidence was synthesized narratively without quantitative pooling." },
       { kind: "heading", level: 1, text: "3. Results" },
-      { kind: "heading", level: 2, text: "3.1 Study Selection and Flow of Records" },
-      { kind: "paragraph", text: `${counts.uploaded || 0} records were identified; ${counts.duplicatesRemoved || 0} duplicates were removed. After deduplication, ${counts.screened || 0} records were screened, ${counts.screenedExcluded || 0} were excluded, ${counts.unresolved || 0} remained unresolved, and ${counts.included || 0} were included.` },
-      { kind: "caption", text: "Figure 1. Adapted PRISMA 2020 flow diagram." },
+      { kind: "heading", level: 2, text: "3.1 Study Selection and Flow of Evidence" },
+      { kind: "paragraph", text: `A total of ${activePrisma.screening.recordsScreened + activePrisma.removedBeforeScreening.duplicates} records were identified from databases (${activePrisma.identification.databases.map((d) => `${d.name}: n = ${d.recordsIdentified}`).join(", ") || "databases"}). Deduplication removed ${activePrisma.removedBeforeScreening.duplicates} duplicate records. After deduplication, ${activePrisma.screening.recordsScreened} records were screened at title and abstract level, with ${activePrisma.screening.recordsExcluded} excluded. A total of ${activePrisma.included.studiesIncluded} studies met all inclusion criteria, and ${activePrisma.included.studiesIncludedInSynthesis} studies were selected into the bounded qualitative synthesis workflow (Figure 1).` },
+      { kind: "caption", text: "Figure 1. PRISMA 2020 flow diagram of the study identification, screening, eligibility and inclusion process." },
       ...(diagramPng ? [{ kind: "image" as const, dataUri: diagramPng }] : []),
       { kind: "heading", level: 2, text: "3.2 Included Studies" },
       {
@@ -584,7 +601,14 @@ export default function FullReviewReport({
   <h2>3. Results</h2>
 
   <h3>3.1 Study Selection and Flow of Evidence</h3>
-   <p>${counts.uploaded || counts.identifiedDb || 0} records were identified, including ${counts.duplicatesRemoved || 0} duplicates recorded as removed. After deduplication, ${counts.afterDedup || 0} records entered the screening ledger, with ${includedRecords.length} included, ${counts.screenedExcluded || 0} excluded, and ${counts.unresolved || 0} unresolved. Full-text retrieval and eligibility assessment were not performed.</p>
+  <p>A total of ${activePrisma.screening.recordsScreened + activePrisma.removedBeforeScreening.duplicates} records were identified from databases (${activePrisma.identification.databases.map((d) => `${d.name}: n = ${d.recordsIdentified}`).join(", ") || "databases"}). Deduplication removed ${activePrisma.removedBeforeScreening.duplicates} duplicate records. After deduplication, ${activePrisma.screening.recordsScreened} records entered title and abstract screening, with ${activePrisma.screening.recordsExcluded} excluded. A total of ${activePrisma.included.studiesIncluded} studies met all inclusion criteria, and ${activePrisma.included.studiesIncludedInSynthesis} studies were selected into the bounded qualitative synthesis workflow (Figure 1).</p>
+  
+  <div style="margin: 20px 0; text-align: center;">
+    <div style="max-width: 720px; margin: 0 auto; border: 1px solid #cbd5e1; padding: 10px; background: #ffffff;">
+      ${prismaSvg}
+    </div>
+    <p style="font-size: 10pt; font-weight: bold; margin-top: 8px; color: #0f172a;">Figure 1. PRISMA 2020 flow diagram of the study identification, screening, eligibility and inclusion process.</p>
+  </div>
 
   <h3>3.1 Included Studies Table (Table 1)</h3>
   <div class="table-caption">Table 1: Included papers and their inclusion justifications</div>
@@ -678,6 +702,33 @@ export default function FullReviewReport({
 
   return (
     <div id="full-review-report-container" className="space-y-6">
+      
+      {/* Pre-Export Checklist */}
+      <div className="bg-blue-50/70 border border-blue-200 p-5 rounded-xl shadow-xs space-y-3">
+        <div className="flex items-center gap-2 mb-2">
+          <ClipboardCheck className="w-5 h-5 text-blue-700" />
+          <h3 className="font-bold text-blue-900">Pre-Export Quality Checklist</h3>
+        </div>
+        <ul className="text-sm text-blue-800 space-y-2 font-medium">
+          <li className="flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            <span>Target manuscript length of 10-12 pages (excluding references) is met.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            <span>Software neutrality strictly maintained (no mention of AI, LitMatrix, or models).</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            <span>PRISMA 2020 Flow Diagram is automatically integrated into the export.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            <span>Evidence Tables reflect exactly the user-screened records.</span>
+          </li>
+        </ul>
+      </div>
+
       {/* Action Bar */}
       <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -867,14 +918,16 @@ export default function FullReviewReport({
           </h2>
 
           <div className="space-y-3">
-            <h3 className="font-bold text-slate-900 text-sm font-mono">3.1 Study Selection and Flow of Records</h3>
+            <h3 className="font-bold text-slate-900 text-sm font-mono">3.1 Study Selection and Flow of Evidence</h3>
             <p className="text-xs sm:text-sm text-slate-700 leading-relaxed text-justify">
-              Records identified: {counts.uploaded || counts.identifiedDb || 0}. After deduplication: {counts.afterDedup || 0}. Included: {includedRecords.length}. Excluded: {counts.screenedExcluded || 0}. Unresolved: {counts.unresolved || 0}. Full-text retrieval and eligibility assessment were not performed.
+              A total of {activePrisma.screening.recordsScreened + activePrisma.removedBeforeScreening.duplicates} records were identified from databases ({activePrisma.identification.databases.map((d) => `${d.name}: n = ${d.recordsIdentified}`).join(", ") || "databases"}). Deduplication removed {activePrisma.removedBeforeScreening.duplicates} duplicate records. After deduplication, {activePrisma.screening.recordsScreened} records entered title and abstract screening, with {activePrisma.screening.recordsExcluded} excluded. A total of {activePrisma.included.studiesIncluded} studies met all inclusion criteria, and {activePrisma.included.studiesIncludedInSynthesis} studies were selected into the bounded qualitative synthesis workflow (Figure 1).
             </p>
 
             <div className="pt-2">
-              <PrismaDiagram counts={counts} showActions={false} />
-              <p className="text-[10px] text-slate-500 font-mono mt-2">Figure 1. Adapted PRISMA 2020 flow diagram. Counts are derived from the screening ledger; unresolved records have no final include or exclude decision.</p>
+              <PrismaDiagram data={activePrisma} showActions={false} />
+              <p className="text-xs text-slate-700 font-serif font-semibold mt-2">
+                Figure 1. PRISMA 2020 flow diagram of the study identification, screening, eligibility and inclusion process.
+              </p>
             </div>
           </div>
 

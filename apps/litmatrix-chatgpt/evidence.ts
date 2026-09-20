@@ -1,11 +1,13 @@
 export const MAX_INTRODUCTION_RECORDS = 100;
-export const MAX_DETAILED_RECORDS = 50;
+export const MAX_DETAILED_RECORDS = 100;
 
 type RecordData = Record<string, unknown>;
 
 type EvidenceContext = {
   criteria?: string[];
   protocol?: Record<string, unknown> | null;
+  maxIntroduction?: number;
+  maxDetailed?: number;
 };
 
 function normalize(value: unknown): string {
@@ -37,10 +39,11 @@ function relevanceScore(record: RecordData, terms: string[]): number {
 
 export function selectIntroductionRecords(records: RecordData[], context: EvidenceContext = {}) {
   const terms = termsFromContext(context);
+  const maxLimit = Math.max(1, Math.min(100, context.maxIntroduction ?? MAX_INTRODUCTION_RECORDS));
   return [...records]
     .map((record, index) => ({ record, index, score: relevanceScore(record, terms) }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
-    .slice(0, MAX_INTRODUCTION_RECORDS)
+    .slice(0, maxLimit)
     .map(({ record }) => record);
 }
 
@@ -48,6 +51,7 @@ export function selectDetailedRecords(records: RecordData[], characteristics: Re
   const terms = termsFromContext(context);
   const characteristicIds = new Set(characteristics.map((c) => String(c.recordId ?? c.id ?? "")));
   const methodTerms = ["method", "methodology", "experiment", "simulation", "model", "case study", "intervention", "design", "sample", "population", ...terms];
+  const maxLimit = Math.max(1, Math.min(100, context.maxDetailed ?? MAX_DETAILED_RECORDS));
   return [...records]
     .map((record, index) => ({
       record,
@@ -55,6 +59,6 @@ export function selectDetailedRecords(records: RecordData[], characteristics: Re
       score: relevanceScore(record, methodTerms) + (record.studyType ? 4 : 0) + (characteristicIds.has(String(record.id)) ? 8 : 0),
     }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
-    .slice(0, MAX_DETAILED_RECORDS)
+    .slice(0, maxLimit)
     .map(({ record }) => record);
 }

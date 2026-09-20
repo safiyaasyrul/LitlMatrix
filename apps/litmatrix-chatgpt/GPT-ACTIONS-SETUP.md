@@ -54,7 +54,7 @@ The GPT should:
 - use only researcher-supplied Scopus/WoS records;
 - never add external papers or fabricated citations;
 - use deterministic LitlMatrix evidence selection;
-- respect 100-record introduction/context and 50-record detailed evidence limits;
+- respect 100-record introduction/context and 100-record detailed evidence limits;
 - never claim to have analyzed more records than an action actually returned;
 - use the four supported citation styles: APA 7th, IEEE, Vancouver, Harvard.
 

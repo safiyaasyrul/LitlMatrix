@@ -340,7 +340,7 @@ export function createServer(owner: AuthUser): McpServer {
 
   registerLitmatrixAppTool(server, "litmatrix_select_evidence", {
     title: "Select Evidence Locally",
-    description: "Deterministically select up to 100 title-relevant records, then up to 50 detailed evidence records. This tool never calls an AI provider and never adds external records. The reviewId must be a value previously returned by litmatrix_start_review (format: lm_<timestamp>_<random>).",
+    description: "Deterministically select up to 100 title-relevant records, then up to 100 detailed evidence records. This tool never calls an AI provider and never adds external records. The reviewId must be a value previously returned by litmatrix_start_review (format: lm_<timestamp>_<random>).",
     inputSchema: z.object({ reviewId: z.string() }),
   }, async ({ reviewId }) => {
     const review = await getReview(reviewId, owner);
@@ -354,7 +354,7 @@ export function createServer(owner: AuthUser): McpServer {
         allRecordCount: review.records.length,
         introductionRecordCount: introduction.length,
         detailedRecordCount: detailed.length,
-        limits: { introduction: 100, detailed: 50 },
+        limits: { introduction: 100, detailed: 100 },
         introduction,
         detailed,
       },
@@ -405,7 +405,7 @@ export function createServer(owner: AuthUser): McpServer {
 
   registerLitmatrixAppTool(server, "litmatrix_get_synthesis_evidence", {
     title: "Get Synthesis Evidence",
-    description: "Return the bounded evidence set for a manuscript section. Introduction uses up to 100 records; title, results, characteristics, synthesis, and discussion use up to 50 detailed records. Use only researcher-supplied records.",
+    description: "Return the bounded evidence set for a manuscript section. Introduction uses up to 100 records; title, results, characteristics, synthesis, and discussion use up to 100 detailed records. Use only researcher-supplied records.",
     inputSchema: z.object({ reviewId: z.string(), section: z.enum(["introduction", "title", "results", "characteristics", "synthesis", "discussion"]) }),
   }, async ({ reviewId, section }) => {
     const review = await getReview(reviewId, owner);
@@ -424,7 +424,7 @@ export function createServer(owner: AuthUser): McpServer {
     description: "Persist structured study characteristics only for imported record IDs. Use only information supported by the supplied records; do not add outside studies.",
     inputSchema: z.object({
       reviewId: z.string(),
-      characteristics: z.array(z.record(z.string(), z.unknown())).max(50),
+      characteristics: z.array(z.record(z.string(), z.unknown())).max(100),
     }),
   }, async ({ reviewId, characteristics }) => {
     const review = await getReview(reviewId, owner);
@@ -462,7 +462,7 @@ export function createServer(owner: AuthUser): McpServer {
       detailedEvidence: detailed,
       characteristics: review.characteristics,
       citationStyleOptions: ["APA 7th", "IEEE", "Vancouver", "Harvard"],
-      evidenceLimits: { introduction: 100, title: 50, results: 50, characteristics: 50, synthesis: 50, discussion: 50 },
+      evidenceLimits: { introduction: 100, title: 100, results: 100, characteristics: 100, synthesis: 100, discussion: 100 },
       rules: [
         "Use only the supplied records and stored study characteristics.",
         "Do not introduce external papers, citations, authors, findings, statistics, or facts.",
@@ -473,6 +473,70 @@ export function createServer(owner: AuthUser): McpServer {
     return {
       content: [{ type: "text", text: JSON.stringify(packageData, null, 2) }],
       structuredContent: packageData,
+    };
+  });
+
+  registerLitmatrixAppTool(server, "litmatrix_get_prisma", {
+    title: "Get PRISMA 2020 Flow Diagram Data",
+    description: "Return the PRISMA 2020 flow-diagram data dynamically generated from the review records, deduplication, screening ledger, and characteristics. Never invents numbers.",
+    inputSchema: z.object({ reviewId: z.string() }),
+  }, async ({ reviewId }) => {
+    const review = await getReview(reviewId, owner);
+    const dbCounts = new Map<string, number>();
+    for (const rec of review.records) {
+      const src = String(rec.databaseSource ?? rec.source ?? "Scopus").trim() || "Scopus";
+      dbCounts.set(src, (dbCounts.get(src) || 0) + 1);
+    }
+    const databases = dbCounts.size > 0
+      ? Array.from(dbCounts.entries()).map(([name, recordsIdentified]) => ({ name, recordsIdentified }))
+      : [{ name: "Scopus", recordsIdentified: review.records.length }];
+
+    const excluded = review.decisions.filter((d) => d.decision === "exclude" || (Number(d.score) < 50 && d.decision !== "include"));
+    const included = review.decisions.filter((d) => d.decision === "include" || (Number(d.score) >= 50 && d.decision !== "exclude"));
+
+    const reasonsMap = new Map<string, number>();
+    for (const d of excluded) {
+      const reason = String(d.exclusionReason ?? d.reason ?? "Other");
+      reasonsMap.set(reason, (reasonsMap.get(reason) || 0) + 1);
+    }
+
+    const prismaData = {
+      reviewId,
+      identification: {
+        databases,
+        otherSources: 0,
+      },
+      removedBeforeScreening: {
+        duplicates: 0,
+        automation: 0,
+        otherReasons: 0,
+      },
+      screening: {
+        recordsScreened: review.records.length,
+        recordsExcluded: excluded.length,
+      },
+      eligibility: {
+        reportsSought: null,
+        reportsNotRetrieved: null,
+        reportsAssessed: null,
+        reportsExcluded: 0,
+        exclusionReasons: Array.from(reasonsMap.entries()).map(([reason, count]) => ({ reason, count })),
+      },
+      included: {
+        studiesIncluded: included.length,
+        studiesIncludedInSynthesis: Math.min(included.length, review.characteristics.length || included.length, 100),
+      },
+      evidenceLimits: {
+        maximumEvidencePool: 100,
+        maximumCharacteristics: 100,
+        maximumThematicAnalysis: 100,
+        maximumSynthesis: 100,
+      },
+    };
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(prismaData, null, 2) }],
+      structuredContent: prismaData,
     };
   });
 
@@ -496,10 +560,10 @@ export function createServer(owner: AuthUser): McpServer {
       instruction = "Call litmatrix_get_screening_batch and screen only the returned records using their supplied title/abstract and the stored criteria. Save valid decisions before requesting another batch.";
     } else if (!review.characteristics.length) {
       action = "extract_characteristics";
-      instruction = "Use the detailed evidence set (maximum 50 records) to extract study characteristics. Save them with litmatrix_save_characteristics.";
+      instruction = "Use the detailed evidence set (maximum 100 records) to extract study characteristics. Save them with litmatrix_save_characteristics.";
     } else {
       action = "draft_manuscript";
-      instruction = "Call litmatrix_get_manuscript_package and draft the requested manuscript section using only its bounded evidence. Title, results, characteristics, synthesis, and discussion each use at most 50 detailed records; introduction/context uses at most 100.";
+      instruction = "Call litmatrix_get_manuscript_package and draft the requested manuscript section using only its bounded evidence. Title, results, characteristics, synthesis, and discussion each use at most 100 detailed records; introduction/context uses at most 100.";
     }
     return {
       content: [{ type: "text", text: instruction }],

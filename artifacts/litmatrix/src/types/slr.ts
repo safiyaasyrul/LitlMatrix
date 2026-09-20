@@ -22,14 +22,20 @@ export interface ScreeningDecision {
     | "Secondary literature / Review paper"
     | "Out of scope / Keyword mismatch"
     | "Wrong population"
+    | "Wrong population/system"
+    | "Wrong intervention"
     | "Wrong intervention / exposure"
     | "Wrong comparator"
     | "Wrong outcome"
     | "Wrong study design"
+    | "Outside publication period"
+    | "Not relevant to research question"
     | "Not accessible / full text unavailable"
+    | "Duplicate"
     | "Duplicate / non-original"
     | "Language barrier"
-    | "Other";
+    | "Other"
+    | (string & {});
   exclusionNotes?: string;
 }
 
@@ -306,4 +312,79 @@ export interface SLRProtocol {
   reportingBiasMethods: string;
   // Item 15 Certainty assessment
   certaintyMethods: string;
+}
+
+export interface PrismaDatabaseSource {
+  name: string;
+  recordsIdentified: number;
+}
+
+export interface PrismaExclusionReasonItem {
+  reason: string;
+  count: number;
+}
+
+export interface PrismaEvidenceLimits {
+  maximumEvidencePool: number;
+  maximumCharacteristics: number;
+  maximumThematicAnalysis: number;
+  maximumSynthesis: number;
+}
+
+export interface PrismaAuditTrailEntry {
+  field: string;
+  label: string;
+  value: number | string | null;
+  source: string;
+  details: string;
+  timestamp?: string;
+}
+
+export interface PrismaFlowData {
+  reviewId: string;
+  identification: {
+    databases: PrismaDatabaseSource[];
+    otherSources: number;
+  };
+  removedBeforeScreening: {
+    duplicates: number;
+    automation: number;
+    otherReasons: number;
+  };
+  screening: {
+    recordsScreened: number;
+    recordsExcluded: number;
+    unresolved?: number;
+  };
+  eligibility: {
+    reportsSought: number | null;
+    reportsNotRetrieved: number | null;
+    reportsAssessed: number | null;
+    reportsExcluded: number;
+    exclusionReasons: PrismaExclusionReasonItem[];
+  };
+  included: {
+    studiesIncluded: number;
+    studiesIncludedInSynthesis: number;
+    studiesIncludedInMetaAnalysis?: number | null;
+  };
+  evidenceLimits: PrismaEvidenceLimits;
+  manualOverrides?: Partial<{
+    databases: PrismaDatabaseSource[];
+    otherSources: number;
+    duplicates: number;
+    automation: number;
+    otherReasons: number;
+    recordsScreened: number;
+    recordsExcluded: number;
+    reportsSought: number | null;
+    reportsNotRetrieved: number | null;
+    reportsAssessed: number | null;
+    reportsExcluded: number;
+    exclusionReasons: PrismaExclusionReasonItem[];
+    studiesIncluded: number;
+    studiesIncludedInSynthesis: number;
+    studiesIncludedInMetaAnalysis: number | null;
+  }>;
+  auditTrail?: Record<string, PrismaAuditTrailEntry>;
 }

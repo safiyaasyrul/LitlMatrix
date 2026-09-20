@@ -15,7 +15,7 @@ Phase 7 hardens the ChatGPT/MCP deployment path and adds a repeatable connection
 
 - Up to 200 imported records.
 - Up to 100 introduction/context records.
-- Up to 50 detailed records for title/results/characteristics/synthesis/discussion.
+- Up to 100 detailed records for title/results/characteristics/synthesis/discussion.
 - Screening is returned in batches of at most 4 unresolved records.
 - No external literature is added by the MCP server.
 

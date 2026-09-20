@@ -425,12 +425,56 @@ Applied Search Parameters & Limits:
 4. Document Type: "${docType}"
 5. Language: "${language}"
 
-Construct reproducible, highly focused, fully validated Boolean search strings for the following academic databases adhering strictly to PRISMA 2020 Item 7. Ensure queries prioritize exact phrase matching (using double quotes for multi-word terms) and search ONLY in the TITLE field to prevent thousands of irrelevant results:
-1. Scopus: Complete TITLE query with grouped Boolean concept blocks (Concept 1 OR ...) AND (Concept 2 OR ...), plus AND (SUBJAREA(...) ), PUBSTAGE filter, PUBYEAR, DOCTYPE, and LANGUAGE. Use TITLE(...) instead of TITLE-ABS-KEY.
-2. Web of Science (WoS) Core Collection: Use only valid WoS field tags: TI=(...), PY=(YYYY-YYYY), DT=(ARTICLE/REVIEW/PROCEEDINGS PAPER), and LA=(ENGLISH). Use TI (Title) instead of TS (Topic). Do not use Scopus TITLE, PUBYEAR, SUBJAREA, PUBSTAGE, or unsupported field names.
-3. PubMed / MEDLINE: Complete syntax using [Title/Abstract] and [MeSH Terms] with Date range and Language limits.
-4. IEEE Xplore: Complete syntax using ("Document Title" OR "Abstract") with publication year range.
-5. Google Scholar / ACM Digital Library: Optimized Boolean search string.
+Construct reproducible database-specific Boolean search strings.
+
+CRITICAL RULES:
+
+1. The user's accepted keywords are the ONLY topic terms that may be used.
+2. Do not introduce unrelated concepts, generic terms, or external literature.
+3. Group synonyms belonging to the same concept with OR.
+4. Connect distinct concepts with AND.
+5. Do not simply combine every keyword with OR.
+6. Preserve the meaning and scope of the review title.
+7. Apply ALL user-selected search limits exactly:
+   - publication year: ${yearFrom}-${yearTo}
+   - language: ${language}
+   - publication type: ${docType}
+   - publication stage: ${stageDesc}
+   - subject area: ${subjectAreasDesc}
+8. Do not omit any selected filter.
+9. Do not put year, language, document type, publication stage,
+   or subject-area terms inside the topic keyword blocks.
+10. Use database-specific syntax only.
+
+SCOPUS:
+- Use TITLE(...)
+- Year: PUBYEAR > ${yearFrom - 1} AND PUBYEAR < ${yearTo + 1}
+- Language: LANGUAGE(...)
+- Document type: DOCTYPE(...)
+- Publication stage: PUBSTAGE(...) when applicable
+- Subject area: SUBJAREA(...) when selected
+
+WEB OF SCIENCE:
+- Use TI=(...)
+- Year: PY=(${yearFrom}-${yearTo})
+- Language: LA=(...)
+- Document type: DT=(...)
+- Do not use Scopus field tags.
+
+PUBMED:
+- Use Title/Abstract and MeSH Terms where appropriate.
+- Apply publication date and language filters.
+
+IEEE XPLORE:
+- Use IEEE-supported field syntax.
+- Apply publication year and document-type limits where supported.
+
+GOOGLE SCHOLAR:
+- Generate the topic Boolean string only.
+- Do not pretend that unsupported database operators such as
+  Scopus DOCTYPE or WoS DT work in Google Scholar.
+- Report year/language/type as interface filters rather than
+  embedding unsupported syntax.
 
 Return ONLY a compact JSON array of objects with the exact schema. Do not use Markdown fences or explanatory text.
 Keep every query on one line. Any double quotes inside a query string must be escaped for JSON (for example: "query": "TS=(\\"diabetes\\" OR \\"diabetic\\")").

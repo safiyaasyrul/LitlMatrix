@@ -660,32 +660,42 @@ Return ONLY:
 ]
       const text = await callAI(prompt, "You are a professional research librarian and Boolean search string engineer. Return syntactically valid JSON only.", aiConfig, 4000);
       const parsedStrategies = extractSearchStrategies(parseJSONLoose(text));
-      const fallbackStrategies = buildFallbackSearchStrategies(
-        keywords,
-        selectedSubjectAreas,
-        publicationStage,
-        yearFrom,
-        yearTo,
-        docType,
-        language,
-      );
-      const normalizedStrategies = fallbackStrategies.map((fallback) => {
-        const match = parsedStrategies.find((strategy) => {
-          const database = typeof strategy?.database === "string" ? strategy.database.toLowerCase() : "";
-          return database.includes(fallback.database.toLowerCase()) ||
-            (fallback.database === "Web of Science" && database.includes("wos")) ||
-            (fallback.database === "PubMed" && database.includes("medline")) ||
-            (fallback.database === "Google Scholar" && database.includes("acm"));
-        });
-        if (!match) return fallback;
-        return {
-          database: fallback.database,
-          query: typeof match.query === "string" && match.query.trim()
-            ? match.query.trim()
-            : fallback.query,
-          filters: typeof match.filters === "string" && match.filters.trim()
-            ? match.filters.trim()
-            : fallback.filters,
+     const fallbackStrategies = buildFallbackSearchStrategies(
+  keywords,
+  selectedSubjectAreas,
+  publicationStage,
+  yearFrom,
+  yearTo,
+  docType,
+  language,
+);
+
+const normalizedStrategies = fallbackStrategies.map((fallback) => {
+  const match = parsedStrategies.find((strategy) => {
+    const database =
+      typeof strategy?.database === "string"
+        ? strategy.database.toLowerCase()
+        : "";
+
+    return database.includes(fallback.database.toLowerCase()) ||
+      (fallback.database === "Web of Science" &&
+        (database.includes("wos") ||
+         database.includes("web of science")));
+  });
+
+  if (!match) return fallback;
+
+  return {
+    database: fallback.database,
+    query:
+      typeof match.query === "string" && match.query.trim()
+        ? match.query.trim()
+        : fallback.query,
+    filters:
+      typeof match.filters === "string" && match.filters.trim()
+        ? match.filters.trim()
+        : fallback.filters,
+ 
         };
       });
       onUpdateProtocol({
@@ -790,8 +800,11 @@ Return ONLY:
               </span>
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Curate search keywords, incorporate target subject areas and publication stage filters, then synthesize reproducible Boolean queries for Scopus, Web of Science, PubMed, and IEEE Xplore.
-            </p>
+  Develop focused, reproducible Boolean search strategies for
+  Scopus and Web of Science using accepted keywords, publication
+  year, language, document type, publication stage, and optional
+  subject-area limits.
+</p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -888,16 +901,28 @@ Return ONLY:
           {/* Add Custom Keyword Input */}
           <div className="pt-2 border-t border-slate-200/80 flex flex-wrap sm:flex-nowrap gap-2 items-center">
             <select
-              value={newKeywordCategory}
-              onChange={(e) => setNewKeywordCategory(e.target.value as any)}
-              className="text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800 shrink-0"
-            >
-              <option value="Concept 1 (Population / Domain)">Concept 1 (Population / Domain)</option>
-              <option value="Concept 2 (Intervention / Technology)">Concept 2 (Intervention / Technology)</option>
-              <option value="Concept 3 (Outcome / Comparator)">Concept 3 (Outcome / Comparator)</option>
-              <option value="MeSH & Controlled Vocabulary">MeSH & Controlled Vocabulary</option>
-              <option value="General / Synonym">General / Synonym</option>
-            </select>
+  value={docType}
+  onChange={(e) => setDocType(e.target.value)}
+  className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
+>
+  <option value="Journal article">Journal Article</option>
+  <option value="Review">Review</option>
+  <option value="Article OR Review">Article + Review</option>
+  <option value="Article OR Conference Paper">
+    Article + Conference Paper
+  </option>
+  <option value="All">All Document Types</option>
+</select>
+<select
+  value={language}
+  onChange={(e) => setLanguage(e.target.value)}
+  className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
+>
+  <option value="English">English</option>
+  <option value="Malay">Malay</option>
+  <option value="English OR Malay">English + Malay</option>
+  <option value="All">All Languages</option>
+</select>
             <input
               type="text"
               value={newKeywordTerm}
@@ -1125,7 +1150,7 @@ Return ONLY:
           <div className="flex items-center justify-between">
             <h3 className="font-mono text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
               <Code2 className="w-4 h-4 text-indigo-600" />
-              Synthesized Database Search Strategies ({protocol.searchStrategies.length})
+             Scopus & Web of Science Search Strategies ({protocol.searchStrategies.length})
             </h3>
             <span className="text-xs font-mono text-slate-500">
                PRISMA 2020 Item 7 compliant

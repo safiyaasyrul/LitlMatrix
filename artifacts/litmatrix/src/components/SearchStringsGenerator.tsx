@@ -358,7 +358,7 @@ Outcomes: "${protocol.objectivesPICO.outcomes}"`;
 Review Type: "${protocol.reviewType}"
 ${frameworkDesc}
 
-Suggest 16-24 academic search keywords, synonyms, alternative spellings, acronyms, and controlled vocabulary terms (MeSH, Emtree, IEEE Inspec, ACM Computing Classification) organized by concept facet.
+Suggest 12-20 highly focused, specific academic search keywords, exact phrases, acronyms, and controlled vocabulary terms (MeSH, Emtree, IEEE Inspec, ACM Computing Classification) organized by concept facet. Do NOT suggest broad, generic terms that will yield excessive false-positive records (e.g., avoid plain words like "impact", "effect", "system").
 
 Return ONLY a JSON array of objects with the exact structure:
 [
@@ -425,7 +425,7 @@ Applied Search Parameters & Limits:
 4. Document Type: "${docType}"
 5. Language: "${language}"
 
-Construct reproducible, fully validated Boolean search strings for the following academic databases adhering strictly to PRISMA 2020 Item 7:
+Construct reproducible, highly focused, fully validated Boolean search strings for the following academic databases adhering strictly to PRISMA 2020 Item 7. Ensure queries prioritize exact phrase matching (using double quotes for multi-word terms) to prevent thousands of irrelevant results:
 1. Scopus: Complete TITLE-ABS-KEY query with grouped Boolean concept blocks (Concept 1 OR ...) AND (Concept 2 OR ...), plus AND (SUBJAREA(...) ), PUBSTAGE filter, PUBYEAR, DOCTYPE, and LANGUAGE.
 2. Web of Science (WoS) Core Collection: Use only valid WoS field tags: TS=(...), PY=(YYYY-YYYY), DT=(ARTICLE/REVIEW/PROCEEDINGS PAPER), and LA=(ENGLISH). Do not use Scopus TITLE-ABS-KEY, PUBYEAR, SUBJAREA, PUBSTAGE, or unsupported field names.
 3. PubMed / MEDLINE: Complete syntax using [Title/Abstract] and [MeSH Terms] with Date range and Language limits.

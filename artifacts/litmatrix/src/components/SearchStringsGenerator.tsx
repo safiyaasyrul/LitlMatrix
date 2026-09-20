@@ -873,28 +873,23 @@ Keep every query on one line. Any double quotes inside a query string must be es
             </div>
             <div>
               <label className="block text-[11px] font-mono text-slate-500 mb-1">Document Type</label>
-              <select
+              <input
+                type="text"
                 value={docType}
                 onChange={(e) => setDocType(e.target.value)}
+                placeholder="e.g. Journal article"
                 className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
-              >
-                <option>Journal article</option>
-                <option>Article OR Conference Paper</option>
-                <option>Review OR Article</option>
-                <option>Any Document Type</option>
-              </select>
+              />
             </div>
             <div>
               <label className="block text-[11px] font-mono text-slate-500 mb-1">Language</label>
-              <select
+              <input
+                type="text"
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
+                placeholder="e.g. English"
                 className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
-              >
-                <option>English</option>
-                <option>English OR Malay</option>
-                <option>Any Language</option>
-              </select>
+              />
             </div>
           </div>
 

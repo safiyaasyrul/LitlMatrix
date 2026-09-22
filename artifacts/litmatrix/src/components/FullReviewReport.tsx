@@ -669,10 +669,7 @@ export default function FullReviewReport({
   <h2>5. Conclusions</h2>
   <p>${citationFreeConclusion}</p>
 
-  <h2>Figure 1. Adapted PRISMA 2020 flow diagram</h2>
-  <p><img src="${svgToDataUri(prismaSvg)}" alt="Adapted PRISMA 2020 flow diagram" style="width:100%; max-width:900px;"/></p>
-
-  ${(protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) ? `
+   ${(protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) ? `
     <h2>Appendix A. Eligibility Criteria</h2>
     ${protocol.eligibilityCriteria.inclusion.length ? `<h3>A.1 Inclusion Criteria</h3><ol>${protocol.eligibilityCriteria.inclusion.map((criterion) => `<li>${criterion}</li>`).join("")}</ol>` : ""}
     ${protocol.eligibilityCriteria.exclusion.length ? `<h3>A.2 Exclusion Criteria</h3><ol>${protocol.eligibilityCriteria.exclusion.map((criterion) => `<li>${criterion}</li>`).join("")}</ol>` : ""}

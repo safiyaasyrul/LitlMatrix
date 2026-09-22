@@ -65,15 +65,43 @@ function buildWebOfScienceQuery(
   docType: string,
   language: string,
 ): string {
-  const selected = keywords
-    .filter((keyword) => keyword.selected && keyword.term.trim())
-    .map((keyword) => keyword.term.trim().replace(/["()]/g, "").replace(/\s+/g, " "))
+  const conceptBlocks = Array.from(
+    new Set(
+      keywords
+        .filter((keyword) => keyword.selected && keyword.term.trim())
+        .map((keyword) => keyword.category)
+    )
+  )
+    .map((category) => {
+      const terms = keywords
+        .filter(
+          (keyword) =>
+            keyword.selected &&
+            keyword.term.trim() &&
+            keyword.category === category
+        )
+        .map((keyword) =>
+          `"${keyword.term
+            .trim()
+            .replace(/["()]/g, "")
+            .replace(/\s+/g, " ")}"`
+        );
+
+      return terms.length > 0
+        ? `(${Array.from(new Set(terms)).join(" OR ")})`
+        : "";
+    })
     .filter(Boolean);
 
-  const uniqueTerms = Array.from(new Set(selected));
-  const topic = uniqueTerms.length > 0
-    ? uniqueTerms.map((term) => `"${term}"`).join(" OR ")
-    : "\"systematic review\"";
+  const topic =
+    conceptBlocks.length >= 2
+      ? conceptBlocks.join(" AND ")
+      : `(${
+          keywords
+            .filter((k) => k.selected && k.term.trim())
+            .map((k) => `"${k.term.trim()}"`)
+            .join(" OR ") || "\"systematic review\""
+        })`;
 
   const filters = [`PY=(${yearFrom}-${yearTo})`];
   if (docType === "Journal article") filters.push("DT=(ARTICLE)");
@@ -269,8 +297,8 @@ export default function SearchStringsGenerator({
   const [publicationStage, setPublicationStage] = useState<"all" | "final" | "inpress">("all");
 
   // Date & Language Filters
-  const [yearFrom, setYearFrom] = useState(2019);
-  const [yearTo, setYearTo] = useState(2026);
+  const [yearFrom, setYearFrom] = useState(new Date().getFullYear() - 5);
+  const [yearTo, setYearTo] = useState(new Date().getFullYear());
   const [docType, setDocType] = useState("Journal article");
   const [language, setLanguage] = useState("English");
 
@@ -750,23 +778,23 @@ Keep every query on one line. Any double quotes inside a query string must be es
             </div>
             <div>
               <label className="block text-[11px] font-mono text-slate-500 mb-1">Document Type</label>
-              <input
-                type="text"
+              <select
                 value={docType}
                 onChange={(e) => setDocType(e.target.value)}
-                placeholder="e.g. Journal article"
-                className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
-              />
+                className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-800"
+              >
+                <option value="Journal article">Journal Article Only</option>
+              </select>
             </div>
             <div>
               <label className="block text-[11px] font-mono text-slate-500 mb-1">Language</label>
-              <input
-                type="text"
+              <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
-                placeholder="e.g. English"
-                className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
-              />
+                className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-800"
+              >
+                <option value="English">English Only</option>
+              </select>
             </div>
           </div>
         </div>

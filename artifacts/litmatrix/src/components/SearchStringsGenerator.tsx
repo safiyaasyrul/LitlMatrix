@@ -219,34 +219,22 @@ function buildFallbackSearchStrategies(
     );
   }
 
-  // Publication stage
-  if (publicationStage === "final") {
+   if (publicationStage === "final") {
     scopusFilters.push("PUBSTAGE(final)");
   } else if (publicationStage === "inpress") {
     scopusFilters.push("PUBSTAGE(aip)");
   }
 
-  // Document type
   if (docType === "Journal article") {
     scopusFilters.push("DOCTYPE(ar)");
-  } else if (docType === "Review") {
-    scopusFilters.push("DOCTYPE(re)");
-  } else if (docType === "Article OR Review") {
-    scopusFilters.push("DOCTYPE(ar OR re)");
   } else if (docType === "Article OR Conference Paper") {
     scopusFilters.push("DOCTYPE(ar OR cp)");
-  } else if (docType === "All") {
-    // No document-type restriction
+  }
+// Enforce English language only
+   if (language === "English") {
+    scopusFilters.push("LANGUAGE(English)");
   }
 
-  // Language
-  if (language === "English") {
-    scopusFilters.push("LANGUAGE(English)");
-  } else if (language === "Malay") {
-    scopusFilters.push("LANGUAGE(Malay)");
-  } else if (language === "English OR Malay") {
-    scopusFilters.push("LANGUAGE(English OR Malay)");
-  }
 
   const scopusQuery =
     `TITLE(${topic}) AND ${scopusFilters.join(" AND ")}`;
@@ -264,21 +252,13 @@ function buildFallbackSearchStrategies(
   // Document type
   if (docType === "Journal article") {
     wosFilters.push("DT=(ARTICLE)");
-  } else if (docType === "Review") {
-    wosFilters.push("DT=(REVIEW)");
-  } else if (docType === "Article OR Review") {
-    wosFilters.push("DT=(ARTICLE OR REVIEW)");
   } else if (docType === "Article OR Conference Paper") {
     wosFilters.push("DT=(ARTICLE OR PROCEEDINGS PAPER)");
   }
 
-  // Language
+  // Enforce English language only
   if (language === "English") {
     wosFilters.push("LA=(ENGLISH)");
-  } else if (language === "Malay") {
-    wosFilters.push("LA=(MALAY)");
-  } else if (language === "English OR Malay") {
-    wosFilters.push("LA=(ENGLISH OR MALAY)");
   }
 
   /*

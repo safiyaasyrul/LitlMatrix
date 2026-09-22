@@ -65,6 +65,10 @@ function buildWebOfScienceQuery(
   docType: string,
   language: string,
 ): string {
+<<<<<<< HEAD
+=======
+
+>>>>>>> 73ed50c133eb2b50cc716db04965b5ec986e8f55
   const conceptBlocks = Array.from(
     new Set(
       keywords
@@ -102,6 +106,39 @@ function buildWebOfScienceQuery(
             .map((k) => `"${k.term.trim()}"`)
             .join(" OR ") || "\"systematic review\""
         })`;
+<<<<<<< HEAD
+=======
+
+  const filters: string[] = [
+    `PY=(${yearFrom}-${yearTo})`,
+  ];
+
+  if (docType === "Journal article") {
+    filters.push("DT=(ARTICLE)");
+  } else if (docType === "Review") {
+    filters.push("DT=(REVIEW)");
+  } else if (docType === "Article OR Review") {
+    filters.push("DT=(ARTICLE OR REVIEW)");
+  } else if (docType === "Article OR Conference Paper") {
+    filters.push("DT=(ARTICLE OR PROCEEDINGS PAPER)");
+  }
+
+  if (language === "English") {
+    filters.push("LA=(ENGLISH)");
+  } else if (language === "Malay") {
+    filters.push("LA=(MALAY)");
+  } else if (language === "English OR Malay") {
+    filters.push("LA=(ENGLISH OR MALAY)");
+  }
+
+  return `TI=${topic} AND ${filters.join(" AND ")}`;
+}
+
+  const uniqueTerms = Array.from(new Set(selected));
+  const topic = uniqueTerms.length > 0
+    ? uniqueTerms.map((term) => `"${term}"`).join(" OR ")
+    : "\"systematic review\"";
+>>>>>>> 73ed50c133eb2b50cc716db04965b5ec986e8f55
 
   const filters = [`PY=(${yearFrom}-${yearTo})`];
   if (docType === "Journal article") filters.push("DT=(ARTICLE)");
@@ -129,72 +166,153 @@ function buildFallbackSearchStrategies(
   const selectedTerms = keywords
     .filter((keyword) => keyword.selected && keyword.term.trim())
     .map((keyword) => keyword.term.trim());
+
   const uniqueTerms = Array.from(new Set(selectedTerms));
-  const conceptBlocks = Array.from(new Set(
-    keywords
-      .filter((keyword) => keyword.selected && keyword.term.trim())
-      .map((keyword) => keyword.category)
-  )).map((category) => {
-    const terms = keywords
-      .filter((keyword) => keyword.selected && keyword.term.trim() && keyword.category === category)
-      .map((keyword) => quoteSearchTerm(keyword.term));
-    return terms.length > 0 ? `(${terms.join(" OR ")})` : "";
-  }).filter(Boolean);
-  // Initial PICO fields are often single, long phrases rather than synonym
-  // groups. Requiring every one with AND can legitimately return zero records.
-  // Use a broad OR starter query until the user has supplied enough synonyms
-  // to form multiple concept blocks.
-  const hasSynonymBlocks = conceptBlocks.length >= 2 &&
-    keywords.some((keyword) => keyword.selected && keyword.term.trim() &&
-      keywords.filter((candidate) =>
-        candidate.selected &&
-        candidate.category === keyword.category &&
-        candidate.term.trim()
-      ).length > 1);
-  const topic = hasSynonymBlocks
-    ? conceptBlocks.join(" AND ")
-    : `(${uniqueTerms.map(quoteSearchTerm).join(" OR ") || "\"systematic review\""})`;
-  const scopusFilters = [
+
+  // Group accepted keywords by concept.
+  const conceptBlocks = Array.from(
+    new Set(
+      keywords
+        .filter((keyword) => keyword.selected && keyword.term.trim())
+        .map((keyword) => keyword.category)
+    )
+  )
+    .map((category) => {
+      const terms = keywords
+        .filter(
+          (keyword) =>
+            keyword.selected &&
+            keyword.term.trim() &&
+            keyword.category === category
+        )
+        .map((keyword) => quoteSearchTerm(keyword.term));
+
+      return terms.length > 0 ? `(${terms.join(" OR ")})` : "";
+    })
+    .filter(Boolean);
+
+  /*
+   * Use AND between distinct concept groups.
+   * If insufficient concept groups exist, fall back to an OR query.
+   */
+  const topic =
+    conceptBlocks.length >= 2
+      ? conceptBlocks.join(" AND ")
+      : `(${uniqueTerms.map(quoteSearchTerm).join(" OR ") || "\"systematic review\""})`;
+
+  /*
+   * -------------------------
+   * SCOPUS FILTERS
+   * -------------------------
+   */
+  const scopusFilters: string[] = [
     `PUBYEAR > ${yearFrom - 1}`,
     `PUBYEAR < ${yearTo + 1}`,
-    selectedSubjectAreas.length > 0 ? `(${selectedSubjectAreas.map((code) => `SUBJAREA(${code})`).join(" OR ")})` : "",
-    publicationStage === "final" ? "PUBSTAGE(final)" : publicationStage === "inpress" ? "PUBSTAGE(aip)" : "",
-    docType === "Journal article" ? "DOCTYPE(ar)" : docType === "Article OR Conference Paper" ? "DOCTYPE(ar OR cp)" : "",
-    language === "English" ? "LANGUAGE(English)" : language === "English OR Malay" ? "LANGUAGE(English OR Malay)" : "",
-  ].filter(Boolean);
-  const scopusQuery = `TITLE(${topic})${scopusFilters.length ? ` AND ${scopusFilters.join(" AND ")}` : ""}`;
-  const wosQuery = buildWebOfScienceQuery(keywords, yearFrom, yearTo, docType, language);
-  const pubmedTopic = uniqueTerms.map((term) => `${quoteSearchTerm(term)}[Title/Abstract]`).join(" OR ") || "\"systematic review\"[Title/Abstract]";
-  const pubmedQuery = `(${pubmedTopic}) AND (${yearFrom}:${yearTo}[dp])${language === "English" ? " AND English[lang]" : language === "English OR Malay" ? " AND (English[lang] OR Malay[lang])" : ""}`;
-  const ieeeQuery = `(${uniqueTerms.map(quoteSearchTerm).join(" OR ") || "\"systematic review\""}) AND Publication Year: ${yearFrom}-${yearTo}`;
-  const googleQuery = uniqueTerms.map(quoteSearchTerm).join(" OR ") || "\"systematic review\"";
-  const commonFilters = `Years ${yearFrom}-${yearTo}, ${docType}, ${language}`;
+  ];
+
+  // Subject areas
+  if (selectedSubjectAreas.length > 0) {
+    scopusFilters.push(
+      `(${selectedSubjectAreas
+        .map((code) => `SUBJAREA(${code})`)
+        .join(" OR ")})`
+    );
+  }
+
+  // Publication stage
+  if (publicationStage === "final") {
+    scopusFilters.push("PUBSTAGE(final)");
+  } else if (publicationStage === "inpress") {
+    scopusFilters.push("PUBSTAGE(aip)");
+  }
+
+  // Document type
+  if (docType === "Journal article") {
+    scopusFilters.push("DOCTYPE(ar)");
+  } else if (docType === "Review") {
+    scopusFilters.push("DOCTYPE(re)");
+  } else if (docType === "Article OR Review") {
+    scopusFilters.push("DOCTYPE(ar OR re)");
+  } else if (docType === "Article OR Conference Paper") {
+    scopusFilters.push("DOCTYPE(ar OR cp)");
+  } else if (docType === "All") {
+    // No document-type restriction
+  }
+
+  // Language
+  if (language === "English") {
+    scopusFilters.push("LANGUAGE(English)");
+  } else if (language === "Malay") {
+    scopusFilters.push("LANGUAGE(Malay)");
+  } else if (language === "English OR Malay") {
+    scopusFilters.push("LANGUAGE(English OR Malay)");
+  }
+
+  const scopusQuery =
+    `TITLE(${topic}) AND ${scopusFilters.join(" AND ")}`;
+
+  /*
+   * -------------------------
+   * WEB OF SCIENCE FILTERS
+   * -------------------------
+   */
+
+  const wosFilters: string[] = [
+    `PY=(${yearFrom}-${yearTo})`,
+  ];
+
+  // Document type
+  if (docType === "Journal article") {
+    wosFilters.push("DT=(ARTICLE)");
+  } else if (docType === "Review") {
+    wosFilters.push("DT=(REVIEW)");
+  } else if (docType === "Article OR Review") {
+    wosFilters.push("DT=(ARTICLE OR REVIEW)");
+  } else if (docType === "Article OR Conference Paper") {
+    wosFilters.push("DT=(ARTICLE OR PROCEEDINGS PAPER)");
+  }
+
+  // Language
+  if (language === "English") {
+    wosFilters.push("LA=(ENGLISH)");
+  } else if (language === "Malay") {
+    wosFilters.push("LA=(MALAY)");
+  } else if (language === "English OR Malay") {
+    wosFilters.push("LA=(ENGLISH OR MALAY)");
+  }
+
+  /*
+   * WoS subject categories are intentionally NOT converted
+   * automatically from Scopus SUBJAREA codes.
+   *
+   * This prevents invalid WoS syntax.
+   */
+  const wosQuery =
+    `${buildWebOfScienceQuery(
+      keywords,
+      yearFrom,
+      yearTo,
+      docType,
+      language
+    )}`;
+
+  const commonFilters =
+    `Years ${yearFrom}-${yearTo}, ${docType}, ${language}`;
 
   return [
     {
       database: "Scopus",
       query: scopusQuery,
-      filters: `${commonFilters}, ${selectedSubjectAreas.length > 0 ? `Subject areas: ${selectedSubjectAreas.join(", ")}` : "all subject areas"}, ${publicationStage}`,
+      filters: `${commonFilters}${
+        selectedSubjectAreas.length > 0
+          ? `, Subject areas: ${selectedSubjectAreas.join(", ")}`
+          : ", all subject areas"
+      }, ${publicationStage}`,
     },
     {
       database: "Web of Science",
       query: wosQuery,
       filters: `${commonFilters}, ${publicationStage}`,
-    },
-    {
-      database: "PubMed",
-      query: pubmedQuery,
-      filters: `${commonFilters}, ${publicationStage}`,
-    },
-    {
-      database: "IEEE Xplore",
-      query: ieeeQuery,
-      filters: `${commonFilters}, Journals & Conferences`,
-    },
-    {
-      database: "Google Scholar",
-      query: googleQuery,
-      filters: `Years ${yearFrom}-${yearTo}, ${language}`,
     },
   ];
 }
@@ -453,71 +571,137 @@ Applied Search Parameters & Limits:
 4. Document Type: "${docType}"
 5. Language: "${language}"
 
-Construct reproducible, highly focused, fully validated Boolean search strings for the following academic databases adhering strictly to PRISMA 2020 Item 7. Ensure queries prioritize exact phrase matching (using double quotes for multi-word terms) and search ONLY in the TITLE field to prevent thousands of irrelevant results:
-1. Scopus: Complete TITLE query with grouped Boolean concept blocks (Concept 1 OR ...) AND (Concept 2 OR ...), plus AND (SUBJAREA(...) ), PUBSTAGE filter, PUBYEAR, DOCTYPE, and LANGUAGE. Use TITLE(...) instead of TITLE-ABS-KEY.
-2. Web of Science (WoS) Core Collection: Use only valid WoS field tags: TI=(...), PY=(YYYY-YYYY), DT=(ARTICLE/REVIEW/PROCEEDINGS PAPER), and LA=(ENGLISH). Use TI (Title) instead of TS (Topic). Do not use Scopus TITLE, PUBYEAR, SUBJAREA, PUBSTAGE, or unsupported field names.
-3. PubMed / MEDLINE: Complete syntax using [Title/Abstract] and [MeSH Terms] with Date range and Language limits.
-4. IEEE Xplore: Complete syntax using ("Document Title" OR "Abstract") with publication year range.
-5. Google Scholar / ACM Digital Library: Optimized Boolean search string.
+Construct reproducible database-specific Boolean search strings.
 
-Return ONLY a compact JSON array of objects with the exact schema. Do not use Markdown fences or explanatory text.
-Keep every query on one line. Any double quotes inside a query string must be escaped for JSON (for example: "query": "TS=(\\"diabetes\\" OR \\"diabetic\\")").
+CRITICAL RULES:
+
+Construct TWO reproducible, database-specific Boolean search strings ONLY:
+
+1. Scopus
+2. Web of Science Core Collection
+
+Do NOT generate PubMed, IEEE Xplore, Google Scholar, ACM,
+or any other database.
+
+SEARCH SCOPE RULES:
+
+- Use ONLY the accepted keywords supplied by the researcher.
+- Do not introduce unrelated topics.
+- Do not add external literature.
+- Group synonyms belonging to the same concept using OR.
+- Connect distinct concepts using AND.
+- Preserve the meaning and scope of the review title.
+- Avoid generic terms that create excessive irrelevant results.
+
+MANDATORY SEARCH LIMITS:
+
+Year:
+${yearFrom}-${yearTo}
+
+Language:
+${language}
+
+Document type:
+${docType}
+
+Publication stage:
+${stageDesc}
+
+Subject areas:
+${subjectAreasDesc}
+
+SCOPUS:
+
+Use:
+TITLE(...)
+
+Apply:
+PUBYEAR > ${yearFrom - 1}
+PUBYEAR < ${yearTo + 1}
+
+Apply document type using valid DOCTYPE codes.
+
+Apply language using LANGUAGE(...).
+
+Apply PUBSTAGE only when required.
+
+Apply SUBJAREA only when subject areas are selected.
+
+WEB OF SCIENCE:
+
+Use:
+TI=(...)
+
+Apply:
+PY=(${yearFrom}-${yearTo})
+
+Apply document type using valid WoS DT values.
+
+Apply:
+LA=(...)
+
+Do NOT use Scopus field codes in WoS.
+
+Do NOT use TS= because LitMatrix is intentionally using title-focused
+searching.
+
+CRITICAL:
+
+Every selected search limit must appear in the appropriate database
+query unless that database does not support that filter syntax.
+
+Return ONLY:
+
 [
   {
     "database": "Scopus",
-    "query": "TITLE(...)",
-    "filters": "Years ${yearFrom}-${yearTo}, ${subjectAreasDesc}, ${stageDesc}, ${docType}, ${language}"
+    "query": "...",
+    "filters": "..."
   },
   {
     "database": "Web of Science",
-    "query": "TI=(...)",
-    "filters": "Years ${yearFrom}-${yearTo}, ${subjectAreasDesc}, ${stageDesc}, ${docType}, ${language}"
-  },
-  {
-    "database": "PubMed",
-    "query": "(...[Title/Abstract] OR ...[MeSH Terms])",
-    "filters": "Years ${yearFrom}-${yearTo}, ${stageDesc}, ${docType}, ${language}"
-  },
-  {
-    "database": "IEEE Xplore",
     "query": "...",
-    "filters": "Years ${yearFrom}-${yearTo}, Journals & Conferences"
-  },
-  {
-    "database": "Google Scholar",
-    "query": "...",
-    "filters": "Years ${yearFrom}-${yearTo}, ${language}"
+    "filters": "..."
   }
-]`;
-
+]
       const text = await callAI(prompt, "You are a professional research librarian and Boolean search string engineer. Return syntactically valid JSON only.", aiConfig, 4000);
       const parsedStrategies = extractSearchStrategies(parseJSONLoose(text));
-      const fallbackStrategies = buildFallbackSearchStrategies(
-        keywords,
-        selectedSubjectAreas,
-        publicationStage,
-        yearFrom,
-        yearTo,
-        docType,
-        language,
-      );
-      const normalizedStrategies = fallbackStrategies.map((fallback) => {
-        const match = parsedStrategies.find((strategy) => {
-          const database = typeof strategy?.database === "string" ? strategy.database.toLowerCase() : "";
-          return database.includes(fallback.database.toLowerCase()) ||
-            (fallback.database === "Web of Science" && database.includes("wos")) ||
-            (fallback.database === "PubMed" && database.includes("medline")) ||
-            (fallback.database === "Google Scholar" && database.includes("acm"));
-        });
-        if (!match) return fallback;
-        return {
-          database: fallback.database,
-          query: typeof match.query === "string" && match.query.trim()
-            ? match.query.trim()
-            : fallback.query,
-          filters: typeof match.filters === "string" && match.filters.trim()
-            ? match.filters.trim()
-            : fallback.filters,
+     const fallbackStrategies = buildFallbackSearchStrategies(
+  keywords,
+  selectedSubjectAreas,
+  publicationStage,
+  yearFrom,
+  yearTo,
+  docType,
+  language,
+);
+
+const normalizedStrategies = fallbackStrategies.map((fallback) => {
+  const match = parsedStrategies.find((strategy) => {
+    const database =
+      typeof strategy?.database === "string"
+        ? strategy.database.toLowerCase()
+        : "";
+
+    return database.includes(fallback.database.toLowerCase()) ||
+      (fallback.database === "Web of Science" &&
+        (database.includes("wos") ||
+         database.includes("web of science")));
+  });
+
+  if (!match) return fallback;
+
+  return {
+    database: fallback.database,
+    query:
+      typeof match.query === "string" && match.query.trim()
+        ? match.query.trim()
+        : fallback.query,
+    filters:
+      typeof match.filters === "string" && match.filters.trim()
+        ? match.filters.trim()
+        : fallback.filters,
+ 
         };
       });
       onUpdateProtocol({
@@ -622,8 +806,11 @@ Keep every query on one line. Any double quotes inside a query string must be es
               </span>
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Curate search keywords, incorporate target subject areas and publication stage filters, then synthesize reproducible Boolean queries for Scopus, Web of Science, PubMed, and IEEE Xplore.
-            </p>
+  Develop focused, reproducible Boolean search strategies for
+  Scopus and Web of Science using accepted keywords, publication
+  year, language, document type, publication stage, and optional
+  subject-area limits.
+</p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -720,16 +907,28 @@ Keep every query on one line. Any double quotes inside a query string must be es
           {/* Add Custom Keyword Input */}
           <div className="pt-2 border-t border-slate-200/80 flex flex-wrap sm:flex-nowrap gap-2 items-center">
             <select
-              value={newKeywordCategory}
-              onChange={(e) => setNewKeywordCategory(e.target.value as any)}
-              className="text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800 shrink-0"
-            >
-              <option value="Concept 1 (Population / Domain)">Concept 1 (Population / Domain)</option>
-              <option value="Concept 2 (Intervention / Technology)">Concept 2 (Intervention / Technology)</option>
-              <option value="Concept 3 (Outcome / Comparator)">Concept 3 (Outcome / Comparator)</option>
-              <option value="MeSH & Controlled Vocabulary">MeSH & Controlled Vocabulary</option>
-              <option value="General / Synonym">General / Synonym</option>
-            </select>
+  value={docType}
+  onChange={(e) => setDocType(e.target.value)}
+  className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
+>
+  <option value="Journal article">Journal Article</option>
+  <option value="Review">Review</option>
+  <option value="Article OR Review">Article + Review</option>
+  <option value="Article OR Conference Paper">
+    Article + Conference Paper
+  </option>
+  <option value="All">All Document Types</option>
+</select>
+<select
+  value={language}
+  onChange={(e) => setLanguage(e.target.value)}
+  className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
+>
+  <option value="English">English</option>
+  <option value="Malay">Malay</option>
+  <option value="English OR Malay">English + Malay</option>
+  <option value="All">All Languages</option>
+</select>
             <input
               type="text"
               value={newKeywordTerm}
@@ -957,7 +1156,7 @@ Keep every query on one line. Any double quotes inside a query string must be es
           <div className="flex items-center justify-between">
             <h3 className="font-mono text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
               <Code2 className="w-4 h-4 text-indigo-600" />
-              Synthesized Database Search Strategies ({protocol.searchStrategies.length})
+             Scopus & Web of Science Search Strategies ({protocol.searchStrategies.length})
             </h3>
             <span className="text-xs font-mono text-slate-500">
                PRISMA 2020 Item 7 compliant

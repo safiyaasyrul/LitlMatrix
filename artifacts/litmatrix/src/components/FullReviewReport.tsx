@@ -383,17 +383,14 @@ export default function FullReviewReport({
     if (protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) {
       md += `## Appendix A. Eligibility Criteria\n\n`;
       if (protocol.eligibilityCriteria.inclusion.length) {
-        md += `### A.1 Inclusion Criteria\n\n`;
-        protocol.eligibilityCriteria.inclusion.forEach((criterion, index) => {
-          md += `${index + 1}. ${criterion}\n`;
-        });
-        md += `\n`;
-      }
-      if (protocol.eligibilityCriteria.exclusion.length) {
-        md += `### A.2 Exclusion Criteria\n\n`;
-        protocol.eligibilityCriteria.exclusion.forEach((criterion, index) => {
-          md += `${index + 1}. ${criterion}\n`;
-        });
+  md += `### A.1 Inclusion Criteria\n\n`;
+  md += `${protocol.eligibilityCriteria.inclusion.join(". ")}.\n\n`;
+}
+
+if (protocol.eligibilityCriteria.exclusion.length) {
+  md += `### A.2 Exclusion Criteria\n\n`;
+  md += `${protocol.eligibilityCriteria.exclusion.join(". ")}.\n\n`;
+}
         md += `\n`;
       }
     }

@@ -364,8 +364,13 @@ export default function FullReviewReport({
       md += `The synthesis focuses on the principal recurring patterns supported by the final included records. Themes are presented concisely and preserve differences in methods, contexts, and reported outcomes.\n\n`;
     }
     synthesis.subtopics.forEach((sub) => {
-      md += `#### ${sub.title.replace(/^\d+(?:\.\d+)*\.?\s*/, "")}\n${formatProse(sub.prose)}\n\n`;
-    });
+  const supportingRecords = includedRecords.filter((record) =>
+    (sub.supportingRecordIds || []).includes(record.id)
+  );
+
+  md += `#### ${sub.title.replace(/^\d+(?:\.\d+)*\.?\s*/, "")}\n`;
+  md += `${formatEvidenceProse(sub.prose, supportingRecords.length ? supportingRecords : includedRecords)}\n\n`;
+});
 
     md += `## 4. Discussion\n\n`;
     md += `### 4.1 Principal Findings\n${formatProse(discussion.item23aGeneralInterpretation)}\n\n`;

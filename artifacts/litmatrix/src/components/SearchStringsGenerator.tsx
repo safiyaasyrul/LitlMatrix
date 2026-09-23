@@ -27,6 +27,7 @@ interface SearchStringsGeneratorProps {
   protocol: SLRProtocol;
   onUpdateProtocol: (protocol: SLRProtocol) => void;
   aiConfig: any;
+  onNext?: () => void;
 }
 
 interface KeywordItem {
@@ -65,10 +66,6 @@ function buildWebOfScienceQuery(
   docType: string,
   language: string,
 ): string {
-<<<<<<< HEAD
-=======
-
->>>>>>> 73ed50c133eb2b50cc716db04965b5ec986e8f55
   const conceptBlocks = Array.from(
     new Set(
       keywords
@@ -106,39 +103,6 @@ function buildWebOfScienceQuery(
             .map((k) => `"${k.term.trim()}"`)
             .join(" OR ") || "\"systematic review\""
         })`;
-<<<<<<< HEAD
-=======
-
-  const filters: string[] = [
-    `PY=(${yearFrom}-${yearTo})`,
-  ];
-
-  if (docType === "Journal article") {
-    filters.push("DT=(ARTICLE)");
-  } else if (docType === "Review") {
-    filters.push("DT=(REVIEW)");
-  } else if (docType === "Article OR Review") {
-    filters.push("DT=(ARTICLE OR REVIEW)");
-  } else if (docType === "Article OR Conference Paper") {
-    filters.push("DT=(ARTICLE OR PROCEEDINGS PAPER)");
-  }
-
-  if (language === "English") {
-    filters.push("LA=(ENGLISH)");
-  } else if (language === "Malay") {
-    filters.push("LA=(MALAY)");
-  } else if (language === "English OR Malay") {
-    filters.push("LA=(ENGLISH OR MALAY)");
-  }
-
-  return `TI=${topic} AND ${filters.join(" AND ")}`;
-}
-
-  const uniqueTerms = Array.from(new Set(selected));
-  const topic = uniqueTerms.length > 0
-    ? uniqueTerms.map((term) => `"${term}"`).join(" OR ")
-    : "\"systematic review\"";
->>>>>>> 73ed50c133eb2b50cc716db04965b5ec986e8f55
 
   const filters = [`PY=(${yearFrom}-${yearTo})`];
   if (docType === "Journal article") filters.push("DT=(ARTICLE)");
@@ -331,6 +295,7 @@ export default function SearchStringsGenerator({
   protocol,
   onUpdateProtocol,
   aiConfig,
+  onNext,
 }: SearchStringsGeneratorProps) {
   // Initialize keywords from protocol
   const getInitialKeywords = (): KeywordItem[] => {
@@ -504,7 +469,7 @@ Outcomes: "${protocol.objectivesPICO.outcomes}"`;
 Review Type: "${protocol.reviewType}"
 ${frameworkDesc}
 
-Suggest 12-20 highly focused, specific academic search keywords, exact phrases, acronyms, and controlled vocabulary terms (MeSH, Emtree, IEEE Inspec, ACM Computing Classification) organized by concept facet. Do NOT suggest broad, generic terms that will yield excessive false-positive records (e.g., avoid plain words like "impact", "effect", "system").
+Suggest 8-12 highly focused, specific academic search keywords, exact phrases, acronyms, and controlled vocabulary terms (MeSH, Emtree, IEEE Inspec, ACM Computing Classification) organized by concept facet. Do NOT suggest broad, generic terms that will yield excessive false-positive records (e.g., avoid plain words like "impact", "effect", "system", "study"). The goal is to retrieve a highly targeted set of records.
 
 Return ONLY a JSON array of objects with the exact structure:
 [
@@ -592,6 +557,7 @@ SEARCH SCOPE RULES:
 - Connect distinct concepts using AND.
 - Preserve the meaning and scope of the review title.
 - Avoid generic terms that create excessive irrelevant results.
+- The search strings MUST be highly focused to avoid returning thousands of unrelated records. Use exact phrase matching (quotes) where appropriate.
 
 MANDATORY SEARCH LIMITS:
 
@@ -664,6 +630,7 @@ Return ONLY:
     "filters": "..."
   }
 ]
+`;
       const text = await callAI(prompt, "You are a professional research librarian and Boolean search string engineer. Return syntactically valid JSON only.", aiConfig, 4000);
       const parsedStrategies = extractSearchStrategies(parseJSONLoose(text));
      const fallbackStrategies = buildFallbackSearchStrategies(
@@ -701,7 +668,6 @@ const normalizedStrategies = fallbackStrategies.map((fallback) => {
       typeof match.filters === "string" && match.filters.trim()
         ? match.filters.trim()
         : fallback.filters,
- 
         };
       });
       onUpdateProtocol({
@@ -906,29 +872,7 @@ const normalizedStrategies = fallbackStrategies.map((fallback) => {
 
           {/* Add Custom Keyword Input */}
           <div className="pt-2 border-t border-slate-200/80 flex flex-wrap sm:flex-nowrap gap-2 items-center">
-            <select
-  value={docType}
-  onChange={(e) => setDocType(e.target.value)}
-  className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
->
-  <option value="Journal article">Journal Article</option>
-  <option value="Review">Review</option>
-  <option value="Article OR Review">Article + Review</option>
-  <option value="Article OR Conference Paper">
-    Article + Conference Paper
-  </option>
-  <option value="All">All Document Types</option>
-</select>
-<select
-  value={language}
-  onChange={(e) => setLanguage(e.target.value)}
-  className="w-full text-xs font-mono p-2 border border-slate-200 rounded-lg bg-white text-slate-800"
->
-  <option value="English">English</option>
-  <option value="Malay">Malay</option>
-  <option value="English OR Malay">English + Malay</option>
-  <option value="All">All Languages</option>
-</select>
+
             <input
               type="text"
               value={newKeywordTerm}
@@ -1233,6 +1177,18 @@ const normalizedStrategies = fallbackStrategies.map((fallback) => {
               </div>
             );
           })}
+        </div>
+      )}
+      
+      {onNext && (
+        <div className="flex justify-end pt-4 border-t border-slate-100 mt-6">
+          <button
+            onClick={onNext}
+            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-colors cursor-pointer"
+          >
+            Save & Continue
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>

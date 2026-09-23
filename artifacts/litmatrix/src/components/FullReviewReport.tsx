@@ -17,6 +17,7 @@ import { buildManuscriptAbstract } from "../utils/manuscriptAbstract";
 import { formatCitationText, formatReference } from "../utils/citationFormatter";
 import { CITATION_STYLE_OPTIONS } from "../utils/citationFormatter";
 import { buildPrismaSvg, svgToDataUri } from "../utils/prismaSvg";
+import { buildConceptualFrameworkSvg, buildThematicRelationshipSvg } from "../utils/figureSvg";
 import { calculatePrismaFlowData } from "../utils/prismaFlowCalculator";
 import { buildDocxBlob, DocxBlock } from "../utils/docxExporter";
 
@@ -145,6 +146,26 @@ const removeCitations = (value: string) =>
     .replace(/\s{2,}/g, " ")
     .trim();
 
+const formatCriteriaProse = (criteria: string[], type: "inclusion" | "exclusion") => {
+  if (criteria.length === 0) return "";
+  const prefix = type === "inclusion" 
+    ? "Eligible studies were required to satisfy specific inclusion criteria. Specifically, " 
+    : "Studies were excluded if they met any of the predefined exclusion criteria. Specifically, ";
+  
+  const sentences = criteria.map((c, i) => {
+    let text = c.trim();
+    if (!text.endsWith(".")) text += ".";
+    // Capitalize first letter just in case
+    text = text.charAt(0).toUpperCase() + text.slice(1);
+    if (i === 0) return text;
+    const transitions = ["Additionally, ", "Furthermore, ", "Moreover, ", "In addition, "];
+    const transition = transitions[i % transitions.length];
+    return `${transition}${text.charAt(0).toLowerCase() + text.slice(1)}`;
+  });
+  
+  return `${prefix}${sentences.join(" ")}`;
+};
+
 export default function FullReviewReport({
   protocol,
   includedRecords,
@@ -267,6 +288,11 @@ export default function FullReviewReport({
   }, [prismaData, screenedRecords, counts, screening, characteristics, synthesis]);
 
   const prismaSvg = buildPrismaSvg(activePrisma);
+  const frameworkSvg = buildConceptualFrameworkSvg(characteristicGroups);
+  const thematicSvg = buildThematicRelationshipSvg(
+    evidenceOverview.map((eo) => ({ title: eo.label, count: eo.count })),
+    manuscriptTitle
+  );
 
   const markdownCountTable = (heading: string, values: LandscapeCount[]) => {
     let table = `#### ${heading}\n\n| Description | Records |\n| --- | ---: |\n`;
@@ -379,17 +405,11 @@ export default function FullReviewReport({
       md += `## Appendix A. Eligibility Criteria\n\n`;
       if (protocol.eligibilityCriteria.inclusion.length) {
         md += `### A.1 Inclusion Criteria\n\n`;
-        protocol.eligibilityCriteria.inclusion.forEach((criterion, index) => {
-          md += `${index + 1}. ${criterion}\n`;
-        });
-        md += `\n`;
+        md += `${formatCriteriaProse(protocol.eligibilityCriteria.inclusion, "inclusion")}\n\n`;
       }
       if (protocol.eligibilityCriteria.exclusion.length) {
         md += `### A.2 Exclusion Criteria\n\n`;
-        protocol.eligibilityCriteria.exclusion.forEach((criterion, index) => {
-          md += `${index + 1}. ${criterion}\n`;
-        });
-        md += `\n`;
+        md += `${formatCriteriaProse(protocol.eligibilityCriteria.exclusion, "exclusion")}\n\n`;
       }
     }
 
@@ -400,10 +420,20 @@ export default function FullReviewReport({
           (item) => item.name.trim().toLowerCase() === strategy.database.trim().toLowerCase()
         );
         md += `### B.${index + 1} ${strategy.database}\n\n`;
-        md += `**Database/Source:** ${strategy.database}\n\n`;
-        if (strategy.filters) md += `**Search fields/filters:** ${strategy.filters}\n\n`;
-        if (source?.lastSearchedDate) md += `**Search date:** ${source.lastSearchedDate}\n\n`;
-        md += `**Search string:**\n\n\`\`\`\n${strategy.query}\n\`\`\`\n\n`;
+        
+        let intro = `The search strategy for ${strategy.database} `;
+        if (source?.lastSearchedDate) {
+          intro += `was executed on ${source.lastSearchedDate}. `;
+        } else {
+          intro += `was formulated and executed as part of this systematic review. `;
+        }
+        
+        if (strategy.filters) {
+          intro += `The search was restricted using the following filters and parameters: ${strategy.filters}. `;
+        }
+        intro += `The exact Boolean search string utilized to query the database is reproduced below:\n\n`;
+        
+        md += `${intro}\`\`\`\n${strategy.query}\n\`\`\`\n\n`;
       });
     }
 
@@ -440,31 +470,36 @@ export default function FullReviewReport({
   };
 
   const handleDownloadDocx = async () => {
-    const diagramPng = await new Promise<string>((resolve) => {
-      const image = new Image();
-      const url = URL.createObjectURL(new Blob([prismaSvg], { type: "image/svg+xml;charset=utf-8" }));
-      image.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = 2400;
-        canvas.height = 1520;
-        const context = canvas.getContext("2d");
-        if (!context) {
+    const renderSvgToPng = (svgStr: string, w = 2400, h = 1520): Promise<string> => {
+      return new Promise<string>((resolve) => {
+        const image = new Image();
+        const url = URL.createObjectURL(new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" }));
+        image.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const context = canvas.getContext("2d");
+          if (!context) {
+            URL.revokeObjectURL(url);
+            return resolve("");
+          }
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          resolve(canvas.toDataURL("image/png"));
+        };
+        image.onerror = () => {
           URL.revokeObjectURL(url);
           resolve("");
-          return;
-        }
-        context.fillStyle = "#ffffff";
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL("image/png"));
-      };
-      image.onerror = () => {
-        URL.revokeObjectURL(url);
-        resolve("");
-      };
-      image.src = url;
-    });
+        };
+        image.src = url;
+      });
+    };
+
+    const diagramPng = await renderSvgToPng(prismaSvg);
+    const fwPng = await renderSvgToPng(frameworkSvg, 1200, 800);
+    const thematicPng = await renderSvgToPng(thematicSvg, 1200, 800);
 
     const blocks: DocxBlock[] = [
       { kind: "title", text: manuscriptTitle },
@@ -484,7 +519,9 @@ export default function FullReviewReport({
       { kind: "paragraph", text: `A total of ${activePrisma.screening.recordsScreened + activePrisma.removedBeforeScreening.duplicates} records were identified from databases (${activePrisma.identification.databases.map((d) => `${d.name}: n = ${d.recordsIdentified}`).join(", ") || "databases"}). Deduplication removed ${activePrisma.removedBeforeScreening.duplicates} duplicate records. After deduplication, ${activePrisma.screening.recordsScreened} records were screened at title and abstract level, with ${activePrisma.screening.recordsExcluded} excluded. A total of ${activePrisma.included.studiesIncluded} studies met all inclusion criteria, and ${activePrisma.included.studiesIncludedInSynthesis} studies were selected into the bounded qualitative synthesis workflow (Figure 1).` },
       { kind: "caption", text: "Figure 1. PRISMA 2020 flow diagram of the study identification, screening, eligibility and inclusion process." },
       ...(diagramPng ? [{ kind: "image" as const, dataUri: diagramPng }] : []),
-      { kind: "heading", level: 2, text: "3.2 Included Studies" },
+      { kind: "heading", level: 2, text: "3.2 Included Studies and Methodological Mapping" },
+      { kind: "caption", text: "Figure 2. Conceptual framework mapping methodological dimensions across the included evidence." },
+      ...(fwPng ? [{ kind: "image" as const, dataUri: fwPng }] : []),
       {
         kind: "table",
         rows: [
@@ -496,6 +533,8 @@ export default function FullReviewReport({
         ],
       },
       { kind: "heading", level: 2, text: "3.3 Narrative and Thematic Synthesis" },
+      { kind: "caption", text: "Figure 3. Thematic relationship diagram visualizing the synthesized emergent themes." },
+      ...(thematicPng ? [{ kind: "image" as const, dataUri: thematicPng }] : []),
       ...synthesis.subtopics.flatMap((subtopic) => [
         { kind: "heading" as const, level: 3 as const, text: subtopic.title.replace(/^\d+(?:\.\d+)*\.?\s*/, "") },
         { kind: "paragraph" as const, text: formatProse(subtopic.prose) },
@@ -511,6 +550,41 @@ export default function FullReviewReport({
       { kind: "paragraph", text: formatProse(discussion.item23cLimitationsOfReviewProcess) },
       { kind: "heading", level: 1, text: "5. Conclusions" },
       { kind: "paragraph", text: citationFreeConclusion },
+      ...((protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) ? [
+        { kind: "heading" as const, level: 1 as const, text: "Appendix A. Eligibility Criteria" },
+        ...(protocol.eligibilityCriteria.inclusion.length ? [
+          { kind: "heading" as const, level: 2 as const, text: "A.1 Inclusion Criteria" },
+          { kind: "paragraph" as const, text: formatCriteriaProse(protocol.eligibilityCriteria.inclusion, "inclusion") },
+        ] : []),
+        ...(protocol.eligibilityCriteria.exclusion.length ? [
+          { kind: "heading" as const, level: 2 as const, text: "A.2 Exclusion Criteria" },
+          { kind: "paragraph" as const, text: formatCriteriaProse(protocol.eligibilityCriteria.exclusion, "exclusion") },
+        ] : [])
+      ] : []),
+      ...(protocol.searchStrategies.length ? [
+        { kind: "heading" as const, level: 1 as const, text: "Appendix B. Search Strategy and Search Strings" },
+        ...protocol.searchStrategies.flatMap((strategy, index) => {
+          const source = protocol.informationSources.find(
+            (item) => item.name.trim().toLowerCase() === strategy.database.trim().toLowerCase()
+          );
+          let intro = `The search strategy for ${strategy.database} `;
+          if (source?.lastSearchedDate) {
+            intro += `was executed on ${source.lastSearchedDate}. `;
+          } else {
+            intro += `was formulated and executed as part of this systematic review. `;
+          }
+          if (strategy.filters) {
+            intro += `The search was restricted using the following filters and parameters: ${strategy.filters}. `;
+          }
+          intro += `The exact Boolean search string utilized to query the database is reproduced below:`;
+          
+          return [
+            { kind: "heading" as const, level: 2 as const, text: `B.${index + 1} ${strategy.database}` },
+            { kind: "paragraph" as const, text: intro },
+            { kind: "paragraph" as const, text: strategy.query }
+          ];
+        })
+      ] : []),
       { kind: "heading", level: 1, text: "References" },
       ...referenceList.map((reference) => ({ kind: "paragraph" as const, text: reference })),
     ];
@@ -631,8 +705,14 @@ export default function FullReviewReport({
     </tbody>
   </table>
 
-  <h3>3.2 Characteristics of Included Studies</h3>
+  <h3>3.2 Characteristics of Included Studies and Methodological Mapping</h3>
   <p>${includedRecords.length} included studies contributed to the descriptive results. Only extracted characteristics with meaningful reported values are shown.</p>
+  <div style="margin: 20px 0; text-align: center;">
+    <div style="max-width: 900px; margin: 0 auto; border: 1px solid #cbd5e1; padding: 10px; background: #ffffff;">
+      ${frameworkSvg}
+    </div>
+    <p style="font-size: 10pt; font-weight: bold; margin-top: 8px; color: #0f172a;">Figure 2. Conceptual framework mapping methodological dimensions across the included evidence.</p>
+  </div>
   ${characteristicGroups.map((group) => htmlCountTable(group.heading, group.values)).join("")}
 
   <h3>3.3 Evidence Overview</h3>
@@ -642,6 +722,12 @@ export default function FullReviewReport({
   ${evidenceOverview.length > 0 ? htmlCountTable("Included studies supporting each theme", evidenceOverview) : ""}
 
   <h3>3.4 Narrative and Thematic Synthesis</h3>
+  <div style="margin: 20px 0; text-align: center;">
+    <div style="max-width: 900px; margin: 0 auto; border: 1px solid #cbd5e1; padding: 10px; background: #ffffff;">
+      ${thematicSvg}
+    </div>
+    <p style="font-size: 10pt; font-weight: bold; margin-top: 8px; color: #0f172a;">Figure 3. Thematic relationship diagram visualizing the synthesized emergent themes.</p>
+  </div>
   ${synthesis.subtopics.length > 0 ? "<p>The synthesis focuses on the principal recurring patterns supported by the final included records. Themes are presented concisely and preserve differences in methods, contexts, and reported outcomes.</p>" : ""}
   ${synthesis.subtopics.map((st) => `
     <h4>${st.title.replace(/^\d+(?:\.\d+)*\.?\s*/, "")}</h4>
@@ -669,8 +755,8 @@ export default function FullReviewReport({
 
   ${(protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) ? `
     <h2>Appendix A. Eligibility Criteria</h2>
-    ${protocol.eligibilityCriteria.inclusion.length ? `<h3>A.1 Inclusion Criteria</h3><ol>${protocol.eligibilityCriteria.inclusion.map((criterion) => `<li>${criterion}</li>`).join("")}</ol>` : ""}
-    ${protocol.eligibilityCriteria.exclusion.length ? `<h3>A.2 Exclusion Criteria</h3><ol>${protocol.eligibilityCriteria.exclusion.map((criterion) => `<li>${criterion}</li>`).join("")}</ol>` : ""}
+    ${protocol.eligibilityCriteria.inclusion.length ? `<h3>A.1 Inclusion Criteria</h3><p>${formatCriteriaProse(protocol.eligibilityCriteria.inclusion, "inclusion")}</p>` : ""}
+    ${protocol.eligibilityCriteria.exclusion.length ? `<h3>A.2 Exclusion Criteria</h3><p>${formatCriteriaProse(protocol.eligibilityCriteria.exclusion, "exclusion")}</p>` : ""}
   ` : ""}
 
   ${protocol.searchStrategies.length ? `
@@ -679,11 +765,20 @@ export default function FullReviewReport({
       const source = protocol.informationSources.find(
         (item) => item.name.trim().toLowerCase() === strategy.database.trim().toLowerCase()
       );
+      let intro = `The search strategy for ${strategy.database} `;
+      if (source?.lastSearchedDate) {
+        intro += `was executed on ${source.lastSearchedDate}. `;
+      } else {
+        intro += `was formulated and executed as part of this systematic review. `;
+      }
+      if (strategy.filters) {
+        intro += `The search was restricted using the following filters and parameters: ${strategy.filters}. `;
+      }
+      intro += `The exact Boolean search string utilized to query the database is reproduced below:`;
+      
       return `<h3>B.${index + 1} ${strategy.database}</h3>
-        <p><strong>Database/Source:</strong> ${strategy.database}</p>
-        ${strategy.filters ? `<p><strong>Search fields/filters:</strong> ${strategy.filters}</p>` : ""}
-        ${source?.lastSearchedDate ? `<p><strong>Search date:</strong> ${source.lastSearchedDate}</p>` : ""}
-        <p><strong>Search string:</strong></p><pre>${strategy.query}</pre>`;
+        <p>${intro}</p>
+        <pre style="background:#f1f5f9; padding:12px; border-radius:4px; font-family:monospace; font-size:9pt; white-space:pre-wrap;">${strategy.query}</pre>`;
     }).join("")}
   ` : ""}
 
@@ -932,10 +1027,19 @@ export default function FullReviewReport({
           </div>
 
           <div className="space-y-3 pt-2">
-            <h3 className="font-bold text-slate-900 text-sm font-mono">3.2 Characteristics of Included Studies</h3>
+            <h3 className="font-bold text-slate-900 text-sm font-mono">3.2 Characteristics of Included Studies and Methodological Mapping</h3>
             <p className="text-xs sm:text-sm text-slate-700 leading-relaxed text-justify">
               {includedRecords.length} included studies contributed to the descriptive results. Only extracted characteristics with meaningful reported values are shown.
             </p>
+            
+            <div className="pt-4 pb-2">
+              <div className="border border-slate-200 rounded-lg overflow-hidden bg-white max-w-full flex justify-center p-4">
+                <div dangerouslySetInnerHTML={{ __html: frameworkSvg }} className="max-w-full h-auto max-h-[600px] overflow-hidden svg-container" />
+              </div>
+              <p className="text-xs text-slate-700 font-serif font-semibold mt-2 text-center">
+                Figure 2. Conceptual framework mapping methodological dimensions across the included evidence.
+              </p>
+            </div>
             {characteristicGroups.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {characteristicGroups.map((group) => (
@@ -1015,6 +1119,16 @@ export default function FullReviewReport({
            {/* Narrative Synthesis with Cross-Author Similarities */}
           <div className="space-y-3 pt-4">
               <h3 className="font-bold text-slate-900 text-sm font-mono">3.4 Narrative and Thematic Synthesis</h3>
+            
+            <div className="pt-2 pb-2">
+              <div className="border border-slate-200 rounded-lg overflow-hidden bg-white max-w-full flex justify-center p-4">
+                <div dangerouslySetInnerHTML={{ __html: thematicSvg }} className="max-w-full h-auto max-h-[600px] overflow-hidden svg-container" />
+              </div>
+              <p className="text-xs text-slate-700 font-serif font-semibold mt-2 text-center">
+                Figure 3. Thematic relationship diagram visualizing the synthesized emergent themes.
+              </p>
+            </div>
+
             {synthesis.subtopics.length > 0 && (
               <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-sans text-justify">
                 The synthesis focuses on the principal recurring patterns supported by the final included records. Themes are presented concisely and preserve differences in methods, contexts, and reported outcomes.
@@ -1064,10 +1178,20 @@ export default function FullReviewReport({
           <section className="space-y-4">
             <h2 className="text-xl font-bold text-slate-900 border-b border-slate-100 pb-2">Appendix A. Eligibility Criteria</h2>
             {protocol.eligibilityCriteria.inclusion.length > 0 && (
-              <div><h3 className="font-bold text-sm">A.1 Inclusion Criteria</h3><ol className="list-decimal pl-6 text-sm">{protocol.eligibilityCriteria.inclusion.map((criterion) => <li key={criterion}>{criterion}</li>)}</ol></div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-sm font-mono">A.1 Inclusion Criteria</h3>
+                <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-sans text-justify">
+                  {formatCriteriaProse(protocol.eligibilityCriteria.inclusion, "inclusion")}
+                </p>
+              </div>
             )}
             {protocol.eligibilityCriteria.exclusion.length > 0 && (
-              <div><h3 className="font-bold text-sm">A.2 Exclusion Criteria</h3><ol className="list-decimal pl-6 text-sm">{protocol.eligibilityCriteria.exclusion.map((criterion) => <li key={criterion}>{criterion}</li>)}</ol></div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-sm font-mono">A.2 Exclusion Criteria</h3>
+                <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-sans text-justify">
+                  {formatCriteriaProse(protocol.eligibilityCriteria.exclusion, "exclusion")}
+                </p>
+              </div>
             )}
           </section>
         )}
@@ -1077,7 +1201,24 @@ export default function FullReviewReport({
             <h2 className="text-xl font-bold text-slate-900 border-b border-slate-100 pb-2">Appendix B. Search Strategy and Search Strings</h2>
             {protocol.searchStrategies.map((strategy, index) => {
               const source = protocol.informationSources.find((item) => item.name.trim().toLowerCase() === strategy.database.trim().toLowerCase());
-              return <div key={`${strategy.database}-${index}`} className="space-y-1 text-sm"><h3 className="font-bold">B.{index + 1} {strategy.database}</h3><p><strong>Database/Source:</strong> {strategy.database}</p>{strategy.filters && <p><strong>Search fields/filters:</strong> {strategy.filters}</p>}{source?.lastSearchedDate && <p><strong>Search date:</strong> {source.lastSearchedDate}</p>}<p><strong>Search string:</strong></p><pre className="whitespace-pre-wrap bg-slate-50 border p-3 rounded">{strategy.query}</pre></div>;
+              let intro = `The search strategy for ${strategy.database} `;
+              if (source?.lastSearchedDate) {
+                intro += `was executed on ${source.lastSearchedDate}. `;
+              } else {
+                intro += `was formulated and executed as part of this systematic review. `;
+              }
+              if (strategy.filters) {
+                intro += `The search was restricted using the following filters and parameters: ${strategy.filters}. `;
+              }
+              intro += `The exact Boolean search string utilized to query the database is reproduced below:`;
+              
+              return (
+                <div key={`${strategy.database}-${index}`} className="space-y-1">
+                  <h3 className="font-bold text-sm font-mono">B.{index + 1} {strategy.database}</h3>
+                  <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-sans text-justify">{intro}</p>
+                  <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-sans text-justify font-mono bg-slate-50 border p-3 rounded">{strategy.query}</p>
+                </div>
+              );
             })}
           </section>
         )}

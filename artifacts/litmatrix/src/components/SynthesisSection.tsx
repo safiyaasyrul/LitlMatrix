@@ -332,10 +332,8 @@ The objective is not to summarize every study individually. The objective is to 
 
 Create approximately 1–5 distinct themes when the evidence supports them. Do
 not manufacture themes to reach a target. Keep each heading to a concise
-2–6-word noun phrase. Expand each thematic narrative to approximately 600–900
-words through substantive synthesis, deep comparison of studies, and methodological
-analysis. The complete Section 3.4 should target approximately 3000–4500 words
-to support a final comprehensive manuscript length of 10-12 pages.
+2–6-word noun phrase. You MUST write an extremely detailed and extensive synthesis. 
+Expand each thematic narrative to approximately 1000–1500 words through exhaustive substantive synthesis, very deep comparison of studies, extensive methodological analysis, and comprehensive elaboration. The complete Section 3.4 MUST be extremely lengthy (targeting 4000–6000 words minimum) to guarantee a final comprehensive manuscript length of at least 12-15 pages. DO NOT output brief summaries.
 
 A study may contribute to more than one theme when its supplied information supports that interpretation.
 
@@ -343,7 +341,7 @@ WRITING RULES:
 
 1. Use objective third-person academic writing.
 
-2. Do not mention artificial intelligence, language models, software, automation, screening technology, or this application.
+2. CRITICAL: The final manuscript must NOT mention: the application name, AI, ChatGPT, Gemini, Claude, OpenAI, or software-specific processing.
 
 3. Do not mention PRISMA items.
 
@@ -369,16 +367,15 @@ WRITING RULES:
 
 14. Preserve important differences between studies rather than collapsing them into a single generalized conclusion.
 
-15. Cite studies where necessary to substantiate statements about the
-    included evidence.
+15. CITE AND DISCUSS THE ACTUAL INCLUDED STUDIES by author and year (e.g., Smith et al., 2024). This exact format is REQUIRED for the manuscript engine to correctly process the references later.
 
-16. Do not prescribe, assume, or hard-code a citation style.
+16. Do not prescribe, assume, or hard-code a citation style like APA or IEEE. Always use the (Author, Year) placeholder format.
 
-17. Preserve the study identity information supplied with each record so that
-    citations can be formatted later according to the citation style selected
-    by the user.
+17. Preserve the study identity information (Author, Year) supplied with each record so that citations can be formatted later according to the citation style selected by the user.
 
 18. Do not fabricate citation information.
+
+19. CRITICAL FORMATTING RULE: Write all text as continuous academic prose paragraphs. DO NOT use bullet points. DO NOT use numbered lists. DO NOT use dash lists.
 
 16. Do not fabricate citations. Every cited study must correspond to a study in the supplied records.
 
@@ -426,8 +423,7 @@ In the same response, generate exactly five concise, publication-ready
 candidate titles for the systematic literature review. Use only the complete
 title evidence base supplied separately below to determine the review scope.
 Do not simply concatenate keywords, introduce unsupported concepts, fabricate
-findings, write a protocol title, or mention artificial intelligence, AI
-screening, software, or this application. Do not make the title narrower or
+findings, write a protocol title, or mention the application name, AI, ChatGPT, Gemini, Claude, OpenAI, or software-specific processing. Do not make the title narrower or
 broader than the included evidence. Avoid a colon unless it materially
 improves clarity.
 
@@ -704,9 +700,9 @@ ${JSON.stringify(titleSourceRecords, null, 2)}
     try {
       const text = await callAI(
         prompt,
-        "You are an expert systematic review methodologist focused on transparent, evidence-grounded narrative and thematic synthesis.",
+        "You are an expert systematic review methodologist focused on transparent, evidence-grounded narrative and thematic synthesis. You MUST write highly detailed, extensive, and very lengthy academic prose. Do NOT write brief summaries.",
         aiConfig,
-        4000
+        12000
       );
 
       const parsed = parseJSONLoose(text);

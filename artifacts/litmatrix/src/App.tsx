@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+
 import {
   SLRProtocol,
   SLRRecord,
@@ -38,6 +39,7 @@ import DiscussionSection from "./components/DiscussionSection";
 import FullReviewReport from "./components/FullReviewReport";
 import ApiKeySection from "./components/ApiKeySection";
 import StepGuidance from "./components/StepGuidance";
+import CitationStyleSection from "./components/CitationStyleSection";
 import { DEFAULT_CITATION_STYLE } from "./utils/citationFormatter";
 
 const neutralDiscussionDefaults: Pick<
@@ -91,6 +93,8 @@ import {
   Check,
   Key,
   FilePlus,
+  Layers,
+  Filter,
 } from "lucide-react";
 
 const LEGACY_FAILED_BATCH_EXCLUSION_REASON =
@@ -366,13 +370,13 @@ export default function App() {
   // Derived included records
   const includedRecords = useMemo(() => {
     return records
-      .filter((r) => screening[r.id]?.agreed === true)
+      .filter((r) => screening[r.id]?.decision === "include")
       .sort((a, b) => (screening[b.id]?.score || 0) - (screening[a.id]?.score || 0));
   }, [records, screening]);
 
   // Derived excluded records
   const excludedRecords = useMemo(() => {
-    return records.filter((r) => screening[r.id]?.agreed === false);
+    return records.filter((r) => screening[r.id]?.decision === "exclude");
   }, [records, screening]);
 
   // Exclusion reasons breakdown for PRISMA Item 16b
@@ -530,67 +534,79 @@ export default function App() {
     },
     {
       id: "step-3",
-      label: "Step 3: Search Databases",
-      badge: "Search",
-      icon: Search,
+      label: "Step 3: Framework Selection",
+      badge: "Protocol",
+      icon: Layers,
     },
     {
       id: "step-4",
-      label: "Step 4: Upload Records",
-      badge: "Import",
-      icon: UploadCloud,
+      label: "Step 4: Eligibility Criteria",
+      badge: "Protocol",
+      icon: Filter,
     },
     {
       id: "step-5",
-      label: "Step 5: Deduplicate",
+      label: "Step 5: Upload Records",
       badge: "Import",
       icon: UploadCloud,
     },
     {
       id: "step-6",
-      label: "Step 6: Screen Studies",
-      badge: "Screening",
-      icon: CheckCircle,
+      label: "Step 6: Deduplicate",
+      badge: "Import",
+      icon: UploadCloud,
     },
     {
       id: "step-7",
-      label: "Step 7: Evidence Selection",
+      label: "Step 7: Screen Studies",
       badge: "Screening",
       icon: CheckCircle,
     },
     {
       id: "step-8",
-      label: "Step 8: Study Characteristics",
-      badge: "Extraction",
+      label: "Step 8: Evidence Selection",
+      badge: "Screening",
       icon: CheckCircle,
     },
     {
       id: "step-9",
-      label: "Step 9: Thematic Analysis",
+      label: "Step 9: Study Characteristics",
+      badge: "Extraction",
+      icon: CheckCircle,
+    },
+    {
+      id: "step-10",
+      label: "Step 10: Thematic Analysis",
       badge: "Synthesis",
       icon: BarChart2,
     },
     {
-      id: "step-10",
-      label: "Step 10: PRISMA 2020",
+      id: "step-11",
+      label: "Step 11: PRISMA 2020",
       badge: "Diagram",
       icon: GitBranch,
     },
     {
-      id: "step-11",
-      label: "Step 11: Synthesis",
+      id: "step-12",
+      label: "Step 12: Synthesis",
       badge: "Discussion",
       icon: BookOpen,
     },
     {
-      id: "step-12",
-      label: "Step 12: Manuscript",
+      id: "step-13",
+      label: "Step 13: Citation Style",
+      badge: "Format",
+      icon: FileText,
+    },
+    {
+      id: "step-14",
+      label: "Step 14: Manuscript",
       badge: "Report",
       icon: FileText,
     },
     {
-      id: "step-13",
-      label: "Step 13: Export",
+      id: "step-15",
+      label: "Step 15: Export",
       badge: "Export",
       icon: FileText,
     },
@@ -746,102 +762,118 @@ export default function App() {
           {activeStage === 1 && (
             <>
               <StepGuidance step={1} title="Enter Title" whatToDo="Enter the research/review title." whatInfoIsRequired="Review topic or title." whatHappensNext="Move to Generate Search Strategy." />
-              <MethodsProtocol protocol={protocol} onUpdateProtocol={setProtocol} aiConfig={activeAIConfig} />
+              <MethodsProtocol protocol={protocol} onUpdateProtocol={setProtocol} aiConfig={activeAIConfig} activeStep={1} onNext={() => setActiveStage(2)} />
             </>
           )}
 
           {/* Step 2: Generate Search Strategy */}
           {activeStage === 2 && (
             <>
-              <StepGuidance step={2} title="Generate Search Strategy" whatToDo="Review the suggested keywords and database search strings." whatInfoIsRequired="Review title/protocol." whatHappensNext="Proceed to Search Databases." />
-              <SearchStringsGenerator protocol={protocol} onUpdateProtocol={setProtocol} aiConfig={activeAIConfig} />
+              <StepGuidance step={2} title="Generate Search Strategy" whatToDo="Review the suggested keywords and database search strings." whatInfoIsRequired="Review title." whatHappensNext="Proceed to Framework Selection." />
+              <SearchStringsGenerator protocol={protocol} onUpdateProtocol={setProtocol} aiConfig={activeAIConfig} onNext={() => setActiveStage(3)} />
             </>
           )}
 
-          {/* Step 3: Search Databases */}
+          {/* Step 3: Framework Selection */}
           {activeStage === 3 && (
             <>
-              <StepGuidance step={3} title="Search Databases" whatToDo="Run the approved searches in Scopus, Web of Science, or other supported databases." whatInfoIsRequired="Search strings." whatHappensNext="Export your results and proceed to Upload Records." />
-              <SearchStringsGenerator protocol={protocol} onUpdateProtocol={setProtocol} aiConfig={activeAIConfig} />
+              <StepGuidance step={3} title="Framework Selection" whatToDo="Select and configure your methodology framework." whatInfoIsRequired="Search strategy details." whatHappensNext="Proceed to Eligibility Criteria." />
+              <MethodsProtocol protocol={protocol} onUpdateProtocol={setProtocol} aiConfig={activeAIConfig} activeStep={3} onNext={() => setActiveStage(4)} />
             </>
           )}
 
-          {/* Step 4: Upload Records */}
+          {/* Step 4: Eligibility Criteria */}
           {activeStage === 4 && (
             <>
-              <StepGuidance step={4} title="Upload Records" whatToDo="Upload the exported RIS, BibTeX or CSV files." whatInfoIsRequired="Exported citation files." whatHappensNext="Run Deduplication." />
-              <RecordsImport records={records} onUpdateRecords={setRecords} dupesRemoved={dupesRemoved} onUpdateDupesRemoved={setDupesRemoved} onAutoSyncAllStagesFromRecords={handleAutoSyncAllStagesFromRecords} />
+              <StepGuidance step={4} title="Eligibility Criteria" whatToDo="Define inclusion and exclusion criteria." whatInfoIsRequired="Framework details." whatHappensNext="Proceed to Upload Records." />
+              <MethodsProtocol protocol={protocol} onUpdateProtocol={setProtocol} aiConfig={activeAIConfig} activeStep={4} onNext={() => setActiveStage(5)} />
             </>
           )}
 
-          {/* Step 5: Deduplicate */}
+          {/* Step 5: Upload Records */}
           {activeStage === 5 && (
             <>
-              <StepGuidance step={5} title="Deduplicate" whatToDo="Review and confirm duplicate removal." whatInfoIsRequired="Uploaded records." whatHappensNext="Proceed to Screen Studies." />
+              <StepGuidance step={5} title="Upload Records" whatToDo="Upload the exported RIS, BibTeX or CSV files from your database searches." whatInfoIsRequired="Exported citation files." whatHappensNext="Run Deduplication." />
               <RecordsImport records={records} onUpdateRecords={setRecords} dupesRemoved={dupesRemoved} onUpdateDupesRemoved={setDupesRemoved} onAutoSyncAllStagesFromRecords={handleAutoSyncAllStagesFromRecords} />
             </>
           )}
 
-          {/* Step 6: Screen Studies */}
+          {/* Step 6: Deduplicate */}
           {activeStage === 6 && (
             <>
-              <StepGuidance step={6} title="Screen Studies" whatToDo="Review the records and make inclusion/exclusion decisions." whatInfoIsRequired="Unique records." whatHappensNext="Select detailed evidence." />
-              <ScreeningSection records={records} dupesRemoved={dupesRemoved || 0} screening={screening} onUpdateScreening={setScreening} protocol={protocol} aiConfig={activeAIConfig} onReplaceGeminiApiKey={(apiKey) => { setKeysConfig((current) => ({ ...current, activeProvider: "gemini", gemini: { ...current.gemini, apiKey } })); }} />
+              <StepGuidance step={6} title="Deduplicate" whatToDo="Review and confirm duplicate removal." whatInfoIsRequired="Uploaded records." whatHappensNext="Proceed to Screen Studies." />
+              <RecordsImport records={records} onUpdateRecords={setRecords} dupesRemoved={dupesRemoved} onUpdateDupesRemoved={setDupesRemoved} onAutoSyncAllStagesFromRecords={handleAutoSyncAllStagesFromRecords} />
             </>
           )}
 
-          {/* Step 7: Evidence Selection */}
+          {/* Step 7: Screen Studies */}
           {activeStage === 7 && (
             <>
-              <StepGuidance step={7} title="Evidence Selection" whatToDo="Select a maximum of 100 records for detailed evidence assessment." whatInfoIsRequired="Included records." whatHappensNext="Extract Study Characteristics." />
+              <StepGuidance step={7} title="Screen Studies" whatToDo="Review the records and make inclusion/exclusion decisions." whatInfoIsRequired="Unique records." whatHappensNext="Select detailed evidence." />
               <ScreeningSection records={records} dupesRemoved={dupesRemoved || 0} screening={screening} onUpdateScreening={setScreening} protocol={protocol} aiConfig={activeAIConfig} onReplaceGeminiApiKey={(apiKey) => { setKeysConfig((current) => ({ ...current, activeProvider: "gemini", gemini: { ...current.gemini, apiKey } })); }} />
             </>
           )}
 
-          {/* Step 8: Study Characteristics */}
+          {/* Step 8: Evidence Selection */}
           {activeStage === 8 && (
             <>
-              <StepGuidance step={8} title="Study Characteristics" whatToDo="Extract characteristics for a maximum of 100 studies." whatInfoIsRequired="Selected evidence records." whatHappensNext="Perform Thematic Analysis." />
+              <StepGuidance step={8} title="Evidence Selection" whatToDo="Select a maximum of 100 records for detailed evidence assessment." whatInfoIsRequired="Included records." whatHappensNext="Extract Study Characteristics." />
               <ScreeningSection records={records} dupesRemoved={dupesRemoved || 0} screening={screening} onUpdateScreening={setScreening} protocol={protocol} aiConfig={activeAIConfig} onReplaceGeminiApiKey={(apiKey) => { setKeysConfig((current) => ({ ...current, activeProvider: "gemini", gemini: { ...current.gemini, apiKey } })); }} />
             </>
           )}
 
-          {/* Step 9: Thematic Analysis */}
+          {/* Step 9: Study Characteristics */}
           {activeStage === 9 && (
             <>
-              <StepGuidance step={9} title="Thematic Analysis" whatToDo="Perform thematic analysis using a maximum of 100 studies." whatInfoIsRequired="Extracted characteristics." whatHappensNext="Review PRISMA 2020." />
-              <SynthesisSection protocol={protocol} onUpdateProtocol={setProtocol} synthesis={synthesis} onUpdateSynthesis={setSynthesis} includedRecords={includedRecords} characteristics={characteristics} aiConfig={activeAIConfig} onNavigateToScreening={() => setActiveStage(6)} />
+              <StepGuidance step={9} title="Study Characteristics" whatToDo="Extract characteristics for a maximum of 100 studies." whatInfoIsRequired="Selected evidence records." whatHappensNext="Perform Thematic Analysis." />
+              <ScreeningSection records={records} dupesRemoved={dupesRemoved || 0} screening={screening} onUpdateScreening={setScreening} protocol={protocol} aiConfig={activeAIConfig} onReplaceGeminiApiKey={(apiKey) => { setKeysConfig((current) => ({ ...current, activeProvider: "gemini", gemini: { ...current.gemini, apiKey } })); }} />
             </>
           )}
 
-          {/* Step 10: PRISMA 2020 */}
+          {/* Step 10: Thematic Analysis */}
           {activeStage === 10 && (
             <>
-              <StepGuidance step={10} title="PRISMA 2020" whatToDo="Review and confirm the automatically generated PRISMA flow diagram." whatInfoIsRequired="Screening and deduplication data." whatHappensNext="Generate Synthesis and Discussion." />
-              <PrismaDiagram data={prismaFlowData} onUpdateOverrides={setPrismaOverrides} onRegenerate={() => setPrismaOverrides(undefined)} onNavigateToManuscript={() => setActiveStage(12)} />
+              <StepGuidance step={10} title="Thematic Analysis" whatToDo="Perform thematic analysis using a maximum of 100 studies." whatInfoIsRequired="Extracted characteristics." whatHappensNext="Review PRISMA 2020." />
+              <SynthesisSection protocol={protocol} onUpdateProtocol={setProtocol} synthesis={synthesis} onUpdateSynthesis={setSynthesis} includedRecords={includedRecords} characteristics={characteristics} aiConfig={activeAIConfig} onNavigateToScreening={() => setActiveStage(7)} />
             </>
           )}
 
-          {/* Step 11: Synthesis */}
+          {/* Step 11: PRISMA 2020 */}
           {activeStage === 11 && (
             <>
-              <StepGuidance step={11} title="Synthesis" whatToDo="Generate the narrative synthesis and academic discussion." whatInfoIsRequired="Thematic analysis results." whatHappensNext="Generate the final Manuscript." />
+              <StepGuidance step={11} title="PRISMA 2020" whatToDo="Review and confirm the automatically generated PRISMA flow diagram." whatInfoIsRequired="Screening and deduplication data." whatHappensNext="Generate Synthesis and Discussion." />
+              <PrismaDiagram data={prismaFlowData} onUpdateOverrides={setPrismaOverrides} onRegenerate={() => setPrismaOverrides(undefined)} onNavigateToManuscript={() => setActiveStage(13)} />
+            </>
+          )}
+
+          {/* Step 12: Synthesis */}
+          {activeStage === 12 && (
+            <>
+              <StepGuidance step={12} title="Synthesis" whatToDo="Generate the narrative synthesis and academic discussion." whatInfoIsRequired="Thematic analysis results." whatHappensNext="Generate the final Manuscript." />
               <DiscussionSection discussion={discussion} onUpdateDiscussion={setDiscussion} protocol={protocol} synthesis={synthesis} aiConfig={activeAIConfig} includedRecords={includedRecords} characteristics={characteristics} />
             </>
           )}
 
-          {/* Step 12: Manuscript */}
-          {activeStage === 12 && (
+          {/* Step 13: Citation Style */}
+          {activeStage === 13 && (
             <>
-              <StepGuidance step={12} title="Manuscript" whatToDo="Review the final consolidated manuscript." whatInfoIsRequired="All prior steps." whatHappensNext="Export the manuscript." />
+              <StepGuidance step={13} title="Citation Style" whatToDo="Select the citation style for your manuscript." whatInfoIsRequired="None." whatHappensNext="Generate the final Manuscript." />
+              <CitationStyleSection citationStyle={citationStyle} onCitationStyleChange={setCitationStyle} onNext={() => setActiveStage(14)} />
+            </>
+          )}
+
+          {/* Step 14: Manuscript */}
+          {activeStage === 14 && (
+            <>
+              <StepGuidance step={14} title="Manuscript" whatToDo="Review the final consolidated manuscript." whatInfoIsRequired="All prior steps." whatHappensNext="Export the manuscript." />
               <FullReviewReport protocol={protocol} includedRecords={includedRecords} screenedRecords={records} screening={screening} characteristics={characteristics} synthesis={synthesis} discussion={discussion} checklist={checklist} prismaData={prismaFlowData} citationStyle={citationStyle} onCitationStyleChange={setCitationStyle} />
             </>
           )}
 
-          {/* Step 13: Export */}
-          {activeStage === 13 && (
+          {/* Step 15: Export */}
+          {activeStage === 15 && (
             <>
-              <StepGuidance step={13} title="Export" whatToDo="Export as Markdown, Word (.docx), PDF, or print." whatInfoIsRequired="Final manuscript." whatHappensNext="Review is complete." />
+              <StepGuidance step={15} title="Export" whatToDo="Export as Markdown, Word (.docx), PDF, or print." whatInfoIsRequired="Final manuscript." whatHappensNext="Review is complete." />
               <FullReviewReport protocol={protocol} includedRecords={includedRecords} screenedRecords={records} screening={screening} characteristics={characteristics} synthesis={synthesis} discussion={discussion} checklist={checklist} prismaData={prismaFlowData} citationStyle={citationStyle} onCitationStyleChange={setCitationStyle} />
             </>
           )}

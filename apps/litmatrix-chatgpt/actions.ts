@@ -183,8 +183,13 @@ export function createActionsRouter() {
       if (!body.reviewId || !["introduction", "title", "results", "characteristics", "synthesis", "discussion"].includes(String(body.section))) return res.status(400).json({ error: "invalid_request", message: "reviewId and a valid section are required." });
       const review = await getReview(body.reviewId, owner);
       const context = { criteria: review.criteria, protocol: review.protocol };
+      
       const introduction = selectIntroductionRecords(review.records, context);
-      const detailed = selectDetailedRecords(introduction, review.characteristics, context);
+      
+      const includedIds = new Set(review.decisions.filter(d => d.decision === "include").map(d => String(d.id)));
+      const includedRecords = review.records.filter(r => includedIds.has(String(r.id)));
+      
+      const detailed = selectDetailedRecords(includedRecords, review.characteristics, context);
       const records = body.section === "introduction" ? introduction : detailed;
       res.json({ reviewId: body.reviewId, section: body.section, recordCount: records.length, records });
     } catch (error) {
@@ -222,9 +227,13 @@ export function createActionsRouter() {
       const review = await getReview(reviewId, owner);
       const context = { criteria: review.criteria, protocol: review.protocol };
       const introductionEvidence = selectIntroductionRecords(review.records, context);
-      const detailedEvidence = selectDetailedRecords(introductionEvidence, review.characteristics, context);
+      
+      const includedIds = new Set(review.decisions.filter(d => d.decision === "include").map(d => String(d.id)));
+      const includedRecords = review.records.filter(r => includedIds.has(String(r.id)));
+      
+      const detailedEvidence = selectDetailedRecords(includedRecords, review.characteristics, context);
       const included = review.decisions.filter((d) => d.decision === "include" || Number(d.score) >= 50);
-      res.json({ reviewId, title: review.title, protocol: review.protocol, totalRecords: review.records.length, decisions: review.decisions, includedDecisionCount: included.length, unresolvedCount: review.records.length - review.decisions.length, introductionEvidence, detailedEvidence, characteristics: review.characteristics, citationStyleOptions: ["APA 7th", "IEEE", "Vancouver", "Harvard"], evidenceLimits: { introduction: 100, title: 100, results: 100, characteristics: 100, synthesis: 100, discussion: 100 }, rules: ["Use only the supplied records and stored study characteristics.", "Do not introduce external papers, citations, authors, findings, statistics, or facts.", "Do not claim to have analyzed records that were not supplied to the current operation.", "If evidence is insufficient, say that it is insufficient rather than inventing support."] });
+      res.json({ reviewId, title: review.title, protocol: review.protocol, totalRecords: review.records.length, decisions: review.decisions, includedDecisionCount: included.length, unresolvedCount: review.records.length - review.decisions.length, introductionEvidence, detailedEvidence, characteristics: review.characteristics, citationStyleOptions: ["APA 7th", "IEEE", "Vancouver", "Harvard"], evidenceLimits: { introduction: 200, title: 200, results: 200, characteristics: 200, synthesis: 200, discussion: 200 }, rules: ["Use only the supplied records and stored study characteristics.", "Do not introduce external papers, citations, authors, findings, statistics, or facts.", "Do not claim to have analyzed records that were not supplied to the current operation.", "If evidence is insufficient, say that it is insufficient rather than inventing support."] });
     } catch (error) {
       console.error("Action manuscript-package error", error);
       res.status(500).json({ error: "internal_error", message: "Unable to build manuscript package." });

@@ -215,7 +215,7 @@ export default function ScreeningSection({
    */
   const batchSize = 4;
 
-  const recordsToScreen = unresolvedRecords;
+  const recordsToScreen = unresolvedRecords.slice(0, 100);
 
   const totalBatches = Math.ceil(
     recordsToScreen.length / batchSize

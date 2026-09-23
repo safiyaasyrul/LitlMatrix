@@ -61,6 +61,18 @@ async function persistReview(reviewId: string, review: Review, owner: AuthUser) 
   await saveReview(reviewId, review, owner);
 }
 
+function getIncludedRecords(review: Review): RecordData[] {
+  const includedIds = new Set(
+    review.decisions
+      .filter((d) => d.decision === "include")
+      .map((d) => String(d.id))
+  );
+
+  return review.records.filter((record) =>
+    includedIds.has(String(record.id))
+  );
+}
+
 function createReviewId() {
   return `lm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -340,7 +352,7 @@ export function createServer(owner: AuthUser): McpServer {
 
   registerLitmatrixAppTool(server, "litmatrix_select_evidence", {
     title: "Select Evidence Locally",
-    description: "Deterministically select up to 100 title-relevant records, then up to 100 detailed evidence records. This tool never calls an AI provider and never adds external records. The reviewId must be a value previously returned by litmatrix_start_review (format: lm_<timestamp>_<random>).",
+    description: "Deterministically select up to 200 title-relevant records, then up to 200 detailed evidence records. This tool never calls an AI provider and never adds external records. The reviewId must be a value previously returned by litmatrix_start_review (format: lm_<timestamp>_<random>).",
     inputSchema: z.object({ reviewId: z.string() }),
   }, async ({ reviewId }) => {
     const review = await getReview(reviewId, owner);
@@ -354,7 +366,7 @@ export function createServer(owner: AuthUser): McpServer {
         allRecordCount: review.records.length,
         introductionRecordCount: introduction.length,
         detailedRecordCount: detailed.length,
-        limits: { introduction: 100, detailed: 100 },
+        limits: { introduction: 200, detailed: 200 },
         introduction,
         detailed,
       },
@@ -383,7 +395,7 @@ export function createServer(owner: AuthUser): McpServer {
       reviewId: z.string(),
       decisions: z.array(z.object({
         id: z.string(),
-        score: z.number().min(0).max(100),
+        score: z.number().min(0).max(200),
         reason: z.string().min(1),
         decision: z.enum(["include", "exclude"]).optional(),
         exclusionReason: z.string().optional(),
@@ -405,14 +417,30 @@ export function createServer(owner: AuthUser): McpServer {
 
   registerLitmatrixAppTool(server, "litmatrix_get_synthesis_evidence", {
     title: "Get Synthesis Evidence",
-    description: "Return the bounded evidence set for a manuscript section. Introduction uses up to 100 records; title, results, characteristics, synthesis, and discussion use up to 100 detailed records. Use only researcher-supplied records.",
+    description: "Return the bounded evidence set for a manuscript section. Introduction uses up to 200 records; title, results, characteristics, synthesis, and discussion use up to 200 detailed records. Use only researcher-supplied records.",
     inputSchema: z.object({ reviewId: z.string(), section: z.enum(["introduction", "title", "results", "characteristics", "synthesis", "discussion"]) }),
   }, async ({ reviewId, section }) => {
     const review = await getReview(reviewId, owner);
     const context = { criteria: review.criteria, protocol: review.protocol };
-    const introduction = selectIntroductionRecords(review.records as any, context);
-    const detailed = selectDetailedRecords(introduction as any, review.characteristics as any, context);
-    const selected = section === "introduction" ? introduction : detailed;
+
+    const introduction = selectIntroductionRecords(
+      review.records as any,
+      context
+    );
+
+    const includedRecords = getIncludedRecords(review);
+
+    const detailed = selectDetailedRecords(
+      includedRecords as any,
+      review.characteristics as any,
+      context
+    );
+
+    const selected =
+      section === "introduction"
+        ? introduction
+        : detailed;
+
     return {
       content: [{ type: "text", text: JSON.stringify({ reviewId, section, recordCount: selected.length, records: selected }, null, 2) }],
       structuredContent: { reviewId, section, recordCount: selected.length, records: selected },
@@ -424,11 +452,15 @@ export function createServer(owner: AuthUser): McpServer {
     description: "Persist structured study characteristics only for imported record IDs. Use only information supported by the supplied records; do not add outside studies.",
     inputSchema: z.object({
       reviewId: z.string(),
-      characteristics: z.array(z.record(z.string(), z.unknown())).max(100),
+      characteristics: z.array(z.record(z.string(), z.unknown())).max(200),
     }),
   }, async ({ reviewId, characteristics }) => {
     const review = await getReview(reviewId, owner);
-    const allowedIds = new Set(review.records.map((r) => String(r.id)));
+    const allowedIds = new Set(
+      review.decisions
+        .filter((d) => d.decision === "include")
+        .map((d) => String(d.id))
+    );
     const accepted = characteristics.filter((c: CharacteristicData) => allowedIds.has(String(c.recordId ?? c.id ?? "")));
     const existing = new Map(review.characteristics.map((c) => [String(c.recordId ?? c.id), c]));
     for (const characteristic of accepted) existing.set(String(characteristic.recordId ?? characteristic.id), characteristic);
@@ -448,8 +480,35 @@ export function createServer(owner: AuthUser): McpServer {
     const review = await getReview(reviewId, owner);
     const context = { criteria: review.criteria, protocol: review.protocol };
     const introduction = selectIntroductionRecords(review.records as any, context);
-    const detailed = selectDetailedRecords(introduction as any, review.characteristics as any, context);
+    
+    const includedRecords = getIncludedRecords(review);
+    const detailed = selectDetailedRecords(
+      includedRecords as any,
+      review.characteristics as any,
+      context
+    );
+
     const included = review.decisions.filter((d) => d.decision === "include" || Number(d.score) >= 50);
+
+    // Build the characteristics table automatically from stored data
+    const characteristicsTable = review.characteristics.map((c: CharacteristicData, idx: number) => {
+      const recordId = String(c.recordId ?? c.id ?? "");
+      const record = review.records.find((r) => String(r.id) === recordId);
+      return {
+        no: idx + 1,
+        recordId,
+        author: record ? (Array.isArray(record.authors) ? (record.authors as string[])[0] ?? "" : "") : String(c.author ?? c.authors ?? ""),
+        year: record ? String(record.year ?? "") : String(c.year ?? ""),
+        title: record ? String(record.title ?? "") : String(c.title ?? ""),
+        source: record ? String(record.source ?? record.journal ?? "") : String(c.source ?? c.journal ?? ""),
+        studyDesign: String(c.studyDesign ?? c.methodology ?? c.method ?? c.design ?? ""),
+        sampleSize: String(c.sampleSize ?? c.sample ?? c.participants ?? c.n ?? ""),
+        country: String(c.country ?? c.location ?? c.region ?? ""),
+        keyFindings: String(c.keyFindings ?? c.findings ?? c.results ?? c.outcome ?? c.mainFindings ?? ""),
+        doi: record ? String(record.doi ?? "") : String(c.doi ?? ""),
+      };
+    });
+
     const packageData = {
       reviewId,
       title: review.title,
@@ -461,13 +520,21 @@ export function createServer(owner: AuthUser): McpServer {
       introductionEvidence: introduction,
       detailedEvidence: detailed,
       characteristics: review.characteristics,
+      characteristicsTable,
       citationStyleOptions: ["APA 7th", "IEEE", "Vancouver", "Harvard"],
-      evidenceLimits: { introduction: 100, title: 100, results: 100, characteristics: 100, synthesis: 100, discussion: 100 },
+      evidenceLimits: { introduction: 200, title: 200, results: 200, characteristics: 200, synthesis: 200, discussion: 200 },
       rules: [
         "Use only the supplied records and stored study characteristics.",
         "Do not introduce external papers, citations, authors, findings, statistics, or facts.",
         "Do not claim to have analyzed records that were not supplied to the current operation.",
         "If evidence is insufficient, say that it is insufficient rather than inventing support.",
+        "You MUST write an incredibly detailed and expansive manuscript. Ensure every section (Introduction, Methods, Results, Synthesis, Discussion) is comprehensively elaborated.",
+        "The complete manuscript MUST be extremely lengthy (targeting 4000-6000 words minimum) to guarantee a final comprehensive length of at least 12-15 pages.",
+        "DO NOT output brief summaries. Expand each thematic narrative and discussion point with exhaustive substantive synthesis and deep methodological analysis.",
+        "FORMATTING: Never use bullet points, dashes, numbered lists, or any list-style formatting in the manuscript body. Write everything as flowing academic paragraphs in a formal scholarly style suitable for indexed journal publication (Q1-Q3 Scopus/WoS). Headings and subheadings are permitted, but the body text under them must be continuous prose, not lists.",
+        "INTRODUCTION SECTION: The Introduction must be comprehensive and suitable for a Q3 or higher Scopus-indexed journal. It must include: (a) a broad contextual background establishing the field and its importance with citations from the supplied records, (b) a critical review of existing literature organized thematically (not as a list of papers), demonstrating how the supplied records collectively build the knowledge base, (c) a clear identification of research gaps showing what remains unresolved or contradictory in the reviewed literature, (d) a statement of the study's purpose/objective and how it addresses the identified gaps, and (e) a brief overview of the paper's structure. The Introduction should be at least 1500 words and must cite at least 60% of the supplied introduction evidence records.",
+        "CHARACTERISTICS TABLE: A 'characteristicsTable' array is provided in this package. Each entry contains the author, year, title, source, studyDesign, sampleSize, country, keyFindings, and DOI, all pre-filled from the stored records and characteristics. When drafting the Results or Characteristics section, render this data directly as a formatted table. Do NOT ask the user to fill in the table manually. If any field is empty, write 'Not reported' in that cell. Present the complete table as-is with all rows populated.",
+        "RESULTS AND SYNTHESIS: Present findings as thematic narratives, grouping studies by theme, methodology, or outcome patterns. Use in-text citations (Author, Year) throughout. Never present results as a list of individual study summaries. Instead, synthesize across studies to identify converging evidence, contradictions, and trends."
       ],
     };
     return {
@@ -524,13 +591,13 @@ export function createServer(owner: AuthUser): McpServer {
       },
       included: {
         studiesIncluded: included.length,
-        studiesIncludedInSynthesis: Math.min(included.length, review.characteristics.length || included.length, 100),
+        studiesIncludedInSynthesis: Math.min(included.length, review.characteristics.length || included.length, 200),
       },
       evidenceLimits: {
-        maximumEvidencePool: 100,
-        maximumCharacteristics: 100,
-        maximumThematicAnalysis: 100,
-        maximumSynthesis: 100,
+        maximumEvidencePool: 200,
+        maximumCharacteristics: 200,
+        maximumThematicAnalysis: 200,
+        maximumSynthesis: 200,
       },
     };
 
@@ -560,10 +627,10 @@ export function createServer(owner: AuthUser): McpServer {
       instruction = "Call litmatrix_get_screening_batch and screen only the returned records using their supplied title/abstract and the stored criteria. Save valid decisions before requesting another batch.";
     } else if (!review.characteristics.length) {
       action = "extract_characteristics";
-      instruction = "Use the detailed evidence set (maximum 100 records) to extract study characteristics. Save them with litmatrix_save_characteristics.";
+      instruction = "Use the detailed evidence set (maximum 200 records) to extract study characteristics. Save them with litmatrix_save_characteristics.";
     } else {
       action = "draft_manuscript";
-      instruction = "Call litmatrix_get_manuscript_package and draft the requested manuscript section using only its bounded evidence. Title, results, characteristics, synthesis, and discussion each use at most 100 detailed records; introduction/context uses at most 100.";
+      instruction = "Call litmatrix_get_manuscript_package and draft the requested manuscript section using only its bounded evidence. Title, results, characteristics, synthesis, and discussion each use at most 200 detailed records; introduction/context uses at most 200.";
     }
     return {
       content: [{ type: "text", text: instruction }],

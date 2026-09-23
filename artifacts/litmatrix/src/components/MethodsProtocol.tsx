@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { SLRProtocol, FormulationFrameworkType, ObjectivesPICO, ObjectivesPICOC, ObjectivesPEO, ObjectivesSPIDER } from "../types/slr";
+import { SLRProtocol, FormulationFrameworkType, ObjectivesPICO, ObjectivesPICOC, ObjectivesPEO, ObjectivesSPIDER, ObjectivesSPICE, ObjectivesCIMO, ObjectivesCUSTOM } from "../types/slr";
 import { Sparkles, Plus, Trash2, BookOpen, ShieldCheck, CheckSquare, Layers, HelpCircle, FileText, Check, Cpu, Leaf, MessageSquare, Stethoscope, Wand2, Info, ArrowRight } from "lucide-react";
 import { callAI, parseJSONLoose } from "../utils/aiClient";
 
@@ -7,6 +7,8 @@ interface MethodsProtocolProps {
   protocol: SLRProtocol;
   onUpdateProtocol: (protocol: SLRProtocol) => void;
   aiConfig: any;
+  activeStep?: number;
+  onNext?: () => void;
 }
 
 // Intelligent detection of framework from review title and keywords
@@ -56,14 +58,56 @@ export function detectFrameworkFromTitle(title: string): FormulationFrameworkTyp
   return "PICO";
 }
 
-export default function MethodsProtocol({ protocol, onUpdateProtocol, aiConfig }: MethodsProtocolProps) {
+export default function MethodsProtocol({ protocol, onUpdateProtocol, aiConfig, activeStep, onNext }: MethodsProtocolProps) {
   const [generatingAll, setGeneratingAll] = useState(false);
   const [newInclusion, setNewInclusion] = useState("");
   const [newExclusion, setNewExclusion] = useState("");
   const [newQuestion, setNewQuestion] = useState("");
   const [newObjective, setNewObjective] = useState("");
 
+  const [recommendationState, setRecommendationState] = useState<"idle" | "loading" | "recommended" | "confirmed">("idle");
+  const [recommendedFramework, setRecommendedFramework] = useState<FormulationFrameworkType | "">("");
+  const [recommendationConfidence, setRecommendationConfidence] = useState<"High" | "Medium" | "Low" | "">("");
+  const [recommendationJustification, setRecommendationJustification] = useState<string>("");
+  const [showFrameworkOptions, setShowFrameworkOptions] = useState(false);
+
   const currentFramework: FormulationFrameworkType = protocol.formulationFramework || "PICO";
+
+  const handleAnalyzeDomain = async () => {
+    if (!protocol.title.trim()) return;
+    setRecommendationState("loading");
+    
+    try {
+      const prompt = `Systematic Review Title: "${protocol.title}"
+Based on this title, identify the research domain and recommend the most suitable formulation framework from the following list: PICO, PICOC, PEO, SPIDER, SPICE, CIMO, NONE (Framework not required).
+
+Return ONLY valid JSON matching this exact structure:
+{
+  "recommendedFramework": "PICO",
+  "confidence": "High",
+  "justification": "Brief 1-2 sentence justification for why this framework fits the domain."
+}`;
+      const text = await callAI(prompt, "You are a systematic review methodology expert.", aiConfig);
+      const parsed = parseJSONLoose(text);
+      
+      if (parsed && parsed.recommendedFramework) {
+        setRecommendedFramework(parsed.recommendedFramework as FormulationFrameworkType);
+        setRecommendationConfidence(parsed.confidence || "Medium");
+        setRecommendationJustification(parsed.justification || "Recommended based on title keywords.");
+        setRecommendationState("recommended");
+        setShowFrameworkOptions(false);
+      } else {
+        throw new Error("Invalid AI response");
+      }
+    } catch (err) {
+      console.error(err);
+      setRecommendedFramework(detectFrameworkFromTitle(protocol.title));
+      setRecommendationConfidence("Medium");
+      setRecommendationJustification("Recommended using heuristic keyword matching.");
+      setRecommendationState("recommended");
+      setShowFrameworkOptions(false);
+    }
+  };
 
   // Framework switch handler with state synchronization
   const handleFrameworkChange = (newFramework: FormulationFrameworkType) => {
@@ -266,6 +310,30 @@ Return ONLY valid JSON matching this exact structure:
           researchType: parsed.spider_researchType || protocol.objectivesSPIDER?.researchType || "Qualitative research (phenomenology, grounded theory) or Mixed-Methods",
         };
 
+        const updatedSpice: ObjectivesSPICE = {
+          setting: parsed.spice_setting || parsed.setting || protocol.objectivesSPICE?.setting || "",
+          perspective: parsed.spice_perspective || parsed.perspective || protocol.objectivesSPICE?.perspective || "",
+          intervention: parsed.spice_intervention || parsed.intervention || protocol.objectivesSPICE?.intervention || updatedPico.intervention,
+          comparison: parsed.spice_comparison || parsed.comparison || protocol.objectivesSPICE?.comparison || updatedPico.comparator,
+          evaluation: parsed.spice_evaluation || parsed.evaluation || protocol.objectivesSPICE?.evaluation || updatedPico.outcomes,
+        };
+
+        const updatedCimo: ObjectivesCIMO = {
+          context: parsed.cimo_context || parsed.context || protocol.objectivesCIMO?.context || "",
+          intervention: parsed.cimo_intervention || parsed.intervention || protocol.objectivesCIMO?.intervention || updatedPico.intervention,
+          mechanisms: parsed.cimo_mechanisms || parsed.mechanisms || protocol.objectivesCIMO?.mechanisms || "",
+          outcomes: parsed.cimo_outcomes || parsed.outcomes || protocol.objectivesCIMO?.outcomes || updatedPico.outcomes,
+        };
+
+        const updatedCustom: ObjectivesCUSTOM = {
+          customFrameworkName: parsed.customFrameworkName || protocol.objectivesCUSTOM?.customFrameworkName || (currentFramework === "NONE" ? "General Systematic Framework" : "Custom Formulation Framework"),
+          element1: parsed.custom_focus || parsed.element1 || protocol.objectivesCUSTOM?.element1 || "",
+          element2: parsed.custom_objectives || parsed.element2 || protocol.objectivesCUSTOM?.element2 || "",
+          element3: parsed.custom_metrics || parsed.element3 || protocol.objectivesCUSTOM?.element3 || "",
+          element4: parsed.element4 || protocol.objectivesCUSTOM?.element4 || "",
+          element5: parsed.element5 || protocol.objectivesCUSTOM?.element5 || "",
+        };
+
         onUpdateProtocol({
           ...protocol,
           introductionRationale: parsed.introductionRationale || protocol.introductionRationale,
@@ -281,6 +349,9 @@ Return ONLY valid JSON matching this exact structure:
           objectivesPICOC: updatedPicoc,
           objectivesPEO: updatedPeo,
           objectivesSPIDER: updatedSpider,
+          objectivesSPICE: updatedSpice,
+          objectivesCIMO: updatedCimo,
+          objectivesCUSTOM: updatedCustom,
           eligibilityCriteria: {
             ...protocol.eligibilityCriteria,
             inclusion: Array.isArray(parsed.inclusion) && parsed.inclusion.length > 0
@@ -422,7 +493,7 @@ Return ONLY valid JSON matching this exact structure:
           groupingForSynthesis: "Thematic grouping by stakeholder role, qualitative methodology, and key emerging thematic domains.",
         },
       });
-    } else {
+    } else if (currentFramework === "PICO") {
       // Clinical / Health PICO Formulation
       onUpdateProtocol({
         ...protocol,
@@ -459,6 +530,46 @@ Return ONLY valid JSON matching this exact structure:
             "Animal or in vitro cellular models",
           ],
           groupingForSynthesis: "Thematic grouping by clinical intervention subtype, patient baseline risk, and study design.",
+        },
+      });
+    } else {
+      // Generic fallback for CUSTOM, NONE, SPICE, CIMO
+      onUpdateProtocol({
+        ...protocol,
+        introductionRationale: `${t} represents a significant area of inquiry with an expanding body of literature. This PRISMA 2020-compliant systematic review synthesizes available evidence, assesses reported outcomes, and evaluates the current state of knowledge.`,
+        backgroundContext: `Foundational concepts, current practice, and ongoing developments regarding ${t}.`,
+        knowledgeGap: `Fragmented evidence, methodological variation, and inconsistent outcome reporting across studies on ${t}.`,
+        primaryResearchQuestions: [
+          `RQ1: What are the primary findings and synthesized outcomes reported for ${t}?`,
+          `RQ2: What methodological approaches characterize the current evidence base?`,
+          `RQ3: What are the key limitations and critical gaps in the existing literature?`,
+        ],
+        secondaryObjectives: [
+          `Map the conceptual, geographical, or empirical landscape of included studies`,
+          `Provide evidence-based recommendations for future research`,
+        ],
+        objectivesCUSTOM: {
+          customFrameworkName: currentFramework === "NONE" ? "General Systematic Framework" : "Custom Formulation Framework",
+          element1: `Target domain or population evaluated in ${t}.`,
+          element2: `Primary intervention, phenomenon, or approach under investigation.`,
+          element3: `Evaluated outcomes, metrics, or thematic domains.`,
+          element4: `Contextual or environmental boundaries.`,
+          element5: `Eligible study designs (e.g. empirical, qualitative, observational).`,
+        },
+        eligibilityCriteria: {
+          ...protocol.eligibilityCriteria,
+          inclusion: [
+            "Peer-reviewed original research studies",
+            `Direct relevance to ${t}`,
+            "Clear reporting of empirical or qualitative methodology",
+            "English language publication",
+          ],
+          exclusion: [
+            "Non-peer-reviewed literature lacking empirical data",
+            "Studies without verifiable methodologies",
+            "Conceptual papers without explicit empirical evaluation",
+          ],
+          groupingForSynthesis: "Thematic grouping by study methodology, evaluation metric, and intervention type.",
         },
       });
     }
@@ -617,81 +728,101 @@ Return ONLY valid JSON matching this exact structure:
 
   return (
     <div id="methods-protocol-container" className="space-y-6">
-      {/* Top Review Title & Metadata */}
+      {/* Step 1: Review Title & Domain Detection */}
+      {(activeStep === undefined || activeStep === 1 || activeStep === 3) && (
       <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="font-mono text-[10px] text-indigo-600 uppercase tracking-wider font-bold">
-              PRISMA 2020 Item 1
+              Step 1: PRISMA 2020 Item 1
             </div>
             <h2 className="text-2xl font-bold text-slate-900 mt-0.5">
-              Review Title & Methodology
+              Review Title & Domain Detection
             </h2>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={handleAutoDetectFramework}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg shadow-2xs transition-colors cursor-pointer"
-              title="Automatically detect optimal framework (PICO, PICOC, PEO, SPIDER) based on title keywords"
-            >
-              <Wand2 className="w-3.5 h-3.5 text-indigo-600" />
-              Auto-Detect Framework
-            </button>
-            <button
-              onClick={handleHeuristicDraft}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg shadow-2xs transition-colors cursor-pointer"
-              title="Apply instant structured template tailored to title and chosen framework"
-            >
-              <FileText className="w-3.5 h-3.5 text-slate-600" />
-              Quick Template ({currentFramework})
-            </button>
-            <button
-              onClick={handleAiAutoDraftAll}
-              disabled={generatingAll || !protocol.title.trim()}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-mono font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 rounded-lg shadow-xs transition-colors cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
-              {generatingAll ? `Synthesizing ${currentFramework} Protocol...` : `AI Auto-Draft (${currentFramework})`}
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-2">
-            <label className="block text-xs font-mono font-semibold text-slate-700 mb-1">
-              Review Title (Item 1)
-            </label>
-            <input
-              type="text"
-              value={protocol.title}
-              onChange={(e) => onUpdateProtocol({ ...protocol, title: e.target.value })}
-              placeholder="e.g. Maritime safety and decarbonisation: a systematic literature review"
-              className="w-full text-sm font-sans p-2.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-900 font-medium"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-mono font-semibold text-slate-700 mb-1">
-              Review Type & Methodology
-            </label>
+          <div className="flex items-center gap-2">
             <select
               value={protocol.reviewType}
               onChange={(e) => onUpdateProtocol({ ...protocol, reviewType: e.target.value })}
-              className="w-full text-sm font-sans p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white text-slate-800"
+              className="text-xs font-mono p-1.5 border border-slate-200 rounded-lg bg-white text-slate-700"
             >
               <option>Systematic Literature Review with Narrative/Thematic Synthesis</option>
-              <option>Systematic Literature Review (Narrative / Thematic)</option>
               <option>Diagnostic Accuracy Systematic Review</option>
               <option>Scoping Review (PRISMA-ScR)</option>
-              <option>Prognostic / Prediction Model Systematic Review</option>
-              <option>Environmental Evidence Synthesis (ROSES)</option>
               <option>Qualitative Evidence Synthesis (SPIDER / Meta-Ethnography)</option>
               <option>Engineering & Technology SLR (Kitchenham PICOC)</option>
             </select>
           </div>
         </div>
 
-      </div>
+        <div className="space-y-3">
+          <label className="block text-xs font-mono font-semibold text-slate-700">
+            Research / Review Title
+          </label>
+          <input
+            type="text"
+            value={protocol.title}
+            onChange={(e) => onUpdateProtocol({ ...protocol, title: e.target.value })}
+            placeholder="e.g. Maritime safety and decarbonisation: a systematic literature review"
+            className="w-full text-sm font-sans p-2.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-900 font-medium"
+          />
+          <div className="flex justify-end pt-2">
+            <button
+              onClick={handleAnalyzeDomain}
+              disabled={recommendationState === "loading" || !protocol.title.trim()}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 rounded-lg shadow-sm transition-colors cursor-pointer"
+            >
+              <Wand2 className="w-4 h-4" />
+              {recommendationState === "loading" ? "Analyzing Domain..." : "Detect Domain & Recommend Framework"}
+            </button>
+          </div>
+        </div>
 
+        {recommendationState === "recommended" && (
+          <div className="mt-4 p-4 border border-indigo-200 bg-indigo-50/50 rounded-xl space-y-4">
+            <div className="flex items-start justify-between flex-wrap gap-2">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  Recommended Framework: <span className="text-indigo-700">{frameworksList.find(f => f.id === recommendedFramework)?.label}</span>
+                </h3>
+                <p className="text-sm text-slate-600 mt-1">{recommendationJustification}</p>
+              </div>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Confidence: {recommendationConfidence}
+              </div>
+            </div>
+            
+            <div className="flex flex-wrap gap-3 pt-2">
+              <button
+                onClick={() => {
+                  if (recommendedFramework) handleFrameworkChange(recommendedFramework);
+                  setRecommendationState("confirmed");
+                  setShowFrameworkOptions(false);
+                }}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg font-semibold text-sm hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                Accept {recommendedFramework}
+              </button>
+              <button
+                onClick={() => setShowFrameworkOptions(!showFrameworkOptions)}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-lg font-semibold text-sm hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                <Layers className="w-4 h-4" />
+                Choose another framework
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+      )}
+
+      {/* Step 2: Framework Selection & Editing */}
+      {(activeStep === undefined || activeStep === 3) && (recommendationState === "confirmed" || showFrameworkOptions || (protocol.title && recommendationState === "idle")) && (
+        <>
+      {/* SECTION 1: PRISMA Item 3 - RATIONALE & BACKGROUND */}
+      {/* SECTION 1: PRISMA Item 3 - RATIONALE & BACKGROUND */}
       {/* SECTION 1: PRISMA Item 3 - RATIONALE & BACKGROUND */}
       <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-xs space-y-4">
         <div>
@@ -748,32 +879,53 @@ Return ONLY valid JSON matching this exact structure:
         </div>
       </div>
 
-      {/* SECTION 2: PRISMA Item 4 - OBJECTIVES & RESEARCH QUESTIONS */}
-      <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-xs space-y-6">
+      <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-xs space-y-4">
         <div>
           <div className="font-mono text-[10px] text-indigo-600 uppercase tracking-wider font-bold">
             PRISMA 2020 Item 4 · ROSES Item 4
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mt-0.5">
-            Formulation Framework, Objectives & Research Questions
+            Formulation Framework & Editable Elements
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Select the formulation framework tailored to your review domain to automatically adapt research questions, criteria fields, and search query architectures.
+            Confirm your formulation framework and edit its core elements (e.g. P, I, C, O) directly below. These will drive your database search queries.
           </p>
         </div>
 
-        {/* 4 Formulation Framework Selector Cards */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-mono font-bold uppercase tracking-wider text-slate-700">
-              Formulation Framework Selector
-            </label>
-            <span className="text-[11px] font-mono text-slate-500">
-              Active: <span className="font-bold text-indigo-700">{activeFwMeta.label}</span> ({activeFwMeta.targetDomain})
-            </span>
-          </div>
+        {/* Action Buttons Container */}
+        <div className="flex items-center gap-2 flex-wrap mb-4">
+          <button
+            onClick={handleHeuristicDraft}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg shadow-2xs transition-colors cursor-pointer"
+          >
+            <FileText className="w-3.5 h-3.5 text-slate-600" />
+            Quick Template ({currentFramework})
+          </button>
+          <button
+            onClick={handleAiAutoDraftAll}
+            disabled={generatingAll || !protocol.title.trim()}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-mono font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 rounded-lg shadow-xs transition-colors cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
+            {generatingAll ? `Synthesizing ${currentFramework} Protocol...` : `AI Auto-Draft (${currentFramework})`}
+          </button>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* 4 Formulation Framework Selector Cards */}
+        {showFrameworkOptions && (
+          <div className="space-y-4 mb-6">
+            <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-mono font-bold uppercase tracking-wider text-slate-700">
+                  Choose another framework
+                </label>
+              </div>
+              <span className="text-[11px] font-mono text-slate-500">
+                Active: <span className="font-bold text-indigo-700">{activeFwMeta.label}</span> ({activeFwMeta.targetDomain})
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {frameworksList.map((fw) => {
               const isSelected = fw.id === currentFramework;
               return (
@@ -809,10 +961,11 @@ Return ONLY valid JSON matching this exact structure:
                 </button>
               );
             })}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Primary Research Questions */}
+        <div className="space-y-6 pt-4 border-t border-slate-200">{/* Primary Research Questions */}
         <div className="border border-indigo-100 rounded-xl p-4 bg-indigo-50/30 space-y-3">
           <div className="flex items-center justify-between">
             <span className="font-mono text-xs font-bold text-indigo-900 uppercase flex items-center gap-1.5">
@@ -1233,8 +1386,24 @@ Return ONLY valid JSON matching this exact structure:
           )}
         </div>
       </div>
-
-      {/* PRISMA Item 5: Eligibility Criteria (Inclusion / Exclusion) */}
+      
+      {onNext && (
+        <div className="flex justify-end pt-4 border-t border-slate-100 mt-6">
+          <button
+            onClick={onNext}
+            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-colors cursor-pointer"
+          >
+            Save & Continue
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+      </div>
+        </>
+      )}
+      
+      {/* SECTION 3: PRISMA Item 5 - ELIGIBILITY CRITERIA */}
+      {(activeStep === undefined || activeStep === 4) && (
       <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-xs space-y-4">
         <div>
           <div className="font-mono text-[10px] text-indigo-600 uppercase tracking-wider font-bold">
@@ -1343,8 +1512,20 @@ Return ONLY valid JSON matching this exact structure:
             className="w-full text-xs font-sans p-2.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-800"
           />
         </div>
+        
+        {onNext && (
+          <div className="flex justify-end pt-4 border-t border-slate-100 mt-6">
+            <button
+              onClick={onNext}
+              className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-colors cursor-pointer"
+            >
+              Save & Continue
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
-
+      )}
     </div>
   );
 }

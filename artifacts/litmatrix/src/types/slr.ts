@@ -198,7 +198,7 @@ export interface RosesChecklistItem {
   userNotes: string;
 }
 
-export type FormulationFrameworkType = "PICO" | "PICOC" | "PEO" | "SPIDER";
+export type FormulationFrameworkType = "PICO" | "PICOC" | "PEO" | "SPIDER" | "SPICE" | "CIMO" | "CUSTOM" | "NONE";
 
 export interface ObjectivesPICO {
   population: string;
@@ -233,6 +233,30 @@ export interface ObjectivesSPIDER {
   researchType: string;
 }
 
+export interface ObjectivesSPICE {
+  setting: string;
+  perspective: string;
+  intervention: string;
+  comparison: string;
+  evaluation: string;
+}
+
+export interface ObjectivesCIMO {
+  context: string;
+  intervention: string;
+  mechanisms: string;
+  outcomes: string;
+}
+
+export interface ObjectivesCUSTOM {
+  customFrameworkName: string;
+  element1: string;
+  element2: string;
+  element3: string;
+  element4: string;
+  element5: string;
+}
+
 export interface SLRProtocol {
   // Items 1, 3 & 4 (Title, Rationale & Objectives)
   title: string;
@@ -248,6 +272,9 @@ export interface SLRProtocol {
   objectivesPICOC?: ObjectivesPICOC;
   objectivesPEO?: ObjectivesPEO;
   objectivesSPIDER?: ObjectivesSPIDER;
+  objectivesSPICE?: ObjectivesSPICE;
+  objectivesCIMO?: ObjectivesCIMO;
+  objectivesCUSTOM?: ObjectivesCUSTOM;
   // Item 5 Eligibility
   eligibilityCriteria: {
     inclusion: string[];

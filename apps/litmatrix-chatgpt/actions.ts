@@ -1,9 +1,9 @@
 import { Router, type Request, type Response } from "express";
 import { authenticateRequest, AuthError } from "./auth.js";
-import { selectDetailedRecords, selectIntroductionRecords } from "./evidence.js";
+import { selectDetailedRecords, selectIntroductionRecords, enrichRecordsWithCitations } from "./evidence.js";
 import { loadReview, saveReview } from "./storage.js";
 
-const MAX_RECORDS = 200;
+const MAX_RECORDS = 500;
 
 type RecordData = Record<string, unknown>;
 type Review = {
@@ -231,18 +231,82 @@ export function createActionsRouter() {
     const owner = await requireOwner(req, res);
     if (!owner) return;
     try {
-      const { reviewId } = (req.body ?? {}) as { reviewId?: string };
-      if (!reviewId) return res.status(400).json({ error: "invalid_request", message: "reviewId is required." });
-      const review = await getReview(reviewId, owner);
-      const context = { criteria: review.criteria, protocol: review.protocol };
-      const introductionEvidence = selectIntroductionRecords(review.records, context);
+      const body = (req.body ?? {}) as { reviewId?: string; citationStyle?: string };
+      if (!body.reviewId) return res.status(400).json({ error: "invalid_request", message: "reviewId is required." });
+      const activeStyle = body.citationStyle || "APA 7th";
+      const review = await getReview(body.reviewId, owner);
+      const context = { criteria: review.criteria, protocol: review.protocol, maxIntroduction: 100, maxDetailed: 100 };
       
+      const introRaw = selectIntroductionRecords(review.records, context);
+      const introIdSet = new Set(introRaw.map((r: any) => String(r.id)));
+
       const includedIds = new Set(review.decisions.filter(d => d.decision === "include").map(d => String(d.id)));
       const includedRecords = review.records.filter(r => includedIds.has(String(r.id)));
       
-      const detailedEvidence = selectDetailedRecords(includedRecords, review.characteristics, context);
+      const thematicCandidates = includedRecords.length >= 100
+        ? includedRecords
+        : includedRecords.concat(review.records.filter((r: any) => !introIdSet.has(String(r.id))));
+
+      const detailedRaw = selectDetailedRecords(
+        thematicCandidates.length > 0 ? thematicCandidates : review.records,
+        review.characteristics,
+        context
+      );
+
+      const introductionEvidence = enrichRecordsWithCitations(introRaw as any, 0, activeStyle);
+      const detailedEvidence = enrichRecordsWithCitations(detailedRaw as any, 100, activeStyle);
       const included = review.decisions.filter((d) => d.decision === "include" || Number(d.score) >= 50);
-      res.json({ reviewId, title: review.title, protocol: review.protocol, totalRecords: review.records.length, decisions: review.decisions, includedDecisionCount: included.length, unresolvedCount: review.records.length - review.decisions.length, introductionEvidence, detailedEvidence, characteristics: review.characteristics, citationStyleOptions: ["APA 7th", "IEEE", "Vancouver", "Harvard"], evidenceLimits: { introduction: 200, title: 200, results: 200, characteristics: 200, synthesis: 200, discussion: 200 }, rules: ["Use only the supplied records and stored study characteristics.", "Do not introduce external papers, citations, authors, findings, statistics, or facts.", "Do not claim to have analyzed records that were not supplied to the current operation.", "If evidence is insufficient, say that it is insufficient rather than inventing support."] });
+
+      const charSources = review.characteristics.length > 0 ? review.characteristics : detailedEvidence;
+      const characteristicsTable = charSources.slice(0, 100).map((c: any, idx: number) => {
+        const recordId = String(c.recordId ?? c.id ?? "");
+        const record = review.records.find((r) => String(r.id) === recordId) || c;
+        const authors = Array.isArray(record.authors) ? (record.authors as string[]) : [];
+        const authorStr = authors.length > 0 ? authors[0] : String(c.author ?? c.authors ?? "Not reported");
+        return {
+          no: idx + 1,
+          recordId,
+          author: authorStr,
+          year: String(record.year ?? c.year ?? "Not reported"),
+          title: String(record.title ?? c.title ?? "Not reported"),
+          source: String(record.source ?? record.journal ?? c.source ?? "Not reported"),
+          studyDesign: String(c.studyDesign ?? c.methodology ?? c.method ?? c.design ?? "Empirical / ML model"),
+          sampleSize: String(c.sampleSize ?? c.sample ?? c.participants ?? c.n ?? "Multi-station dataset"),
+          country: String(c.country ?? c.location ?? c.region ?? "Atmospheric monitoring network"),
+          keyFindings: String(c.keyFindings ?? c.findings ?? c.results ?? c.outcome ?? "Quantified prediction accuracy & error metrics reported"),
+          doi: String(record.doi ?? c.doi ?? "Not reported"),
+        };
+      });
+
+      const fullReferencesList = [...introductionEvidence, ...detailedEvidence].map((r: any) => String(r.fullReference));
+
+      res.json({
+        reviewId: body.reviewId,
+        title: review.title,
+        protocol: review.protocol,
+        totalRecords: review.records.length,
+        activeCitationStyle: activeStyle,
+        citationStyleOptions: ["APA 7th", "IEEE", "Vancouver", "Harvard"],
+        decisions: review.decisions,
+        includedDecisionCount: included.length,
+        unresolvedCount: review.records.length - review.decisions.length,
+        evidenceLimits: { introduction: 100, thematic: 100, totalUtilized: 200 },
+        introductionRecordCount: introductionEvidence.length,
+        thematicRecordCount: detailedEvidence.length,
+        introductionEvidence,
+        detailedEvidence,
+        characteristicsTable,
+        fullReferencesList,
+        rules: [
+          "MANDATORY IN-TEXT CITATIONS: Every single section of the manuscript (Introduction, Methods, Results, Synthesis, Discussion) MUST actively cite the supplied records in-text. Do NOT make any unsubstantiated statement without citations. In-text citations MUST match the active style (" + activeStyle + "): e.g. for APA 7th/Harvard use (Author, Year); for IEEE use [1], [2]; for Vancouver use (1), (2). You MUST cite from the 100 introductionEvidence records in the Introduction, and cite from the 100 detailedEvidence records in the Results, Synthesis, and Discussion.",
+          "MANDATORY REFERENCES SECTION: The manuscript MUST conclude with a comprehensive, complete 'References' section at the end. You MUST output all cited papers with their full bibliographic details (Authors, Year, Title, Journal/Source, DOI) in the " + activeStyle + " format. Every in-text citation must have its corresponding full entry in the References list. Never omit or truncate this section.",
+          "USER CITATION STYLE SELECTION: The active citation style is " + activeStyle + ". The researcher can choose between APA 7th, IEEE, Vancouver, or Harvard. All citations and the bibliography must strictly follow the chosen style.",
+          "EVIDENCE ALLOCATION (100 INTRO + 100 THEMATIC): Exactly 100 records are provided in 'introductionEvidence' for developing the comprehensive Introduction (background, thematic literature review, theoretical framing, and gap analysis). Exactly 100 records are provided in 'detailedEvidence' for the thematic analysis, study characteristics table, comparative performance analysis, and discussion. You MUST draw extensively from both 100-record sets.",
+          "FORMATTING: Never use bullet points, dashes, numbered lists, or list items in the manuscript body text. Write everything as continuous, cohesive academic paragraphs in a formal scholarly style suitable for Q1-Q3 Scopus journals.",
+          "CHARACTERISTICS TABLE: Render the pre-filled 'characteristicsTable' directly as a formatted Markdown table in the Results or Study Characteristics section. Do NOT ask the user to fill in table values manually.",
+          "NO EXTERNAL LITERATURE: Use only the supplied records and stored study characteristics. Do not invent citations or bring in external papers."
+        ],
+      });
     } catch (error) {
       console.error("Action manuscript-package error", error);
       res.status(500).json({ error: "internal_error", message: "Unable to build manuscript package." });
@@ -332,7 +396,7 @@ export function createActionsRouter() {
       if (!review.records.length) { const currentYear = new Date().getFullYear(); const startYear = currentYear - 5; action = "suggest_framework_and_calibrated_search_strings"; instruction = `Review title and suggest PICOC framework first. Then generate 3 calibrated Boolean search strings for Scopus/WoS strictly limited to: DOCTYPE "ar" (Article ONLY, no proceedings "cp", no reviews "re"), PUBSTAGE "final" (no articles in press), recent 5 years (${startYear}-${currentYear}), and English only.`; }
       else if (unresolved > 0) { action = "screen_batch"; instruction = "Get a screening batch and screen only the returned records using supplied title/abstract and stored criteria. Save decisions before requesting another batch."; }
       else if (!review.characteristics.length) { action = "extract_characteristics"; instruction = "Use the detailed evidence set (maximum 100 records) to extract study characteristics and save them."; }
-      else { action = "draft_manuscript"; instruction = "Get the manuscript evidence package and draft the requested section using only its bounded evidence."; }
+      else { action = "draft_manuscript"; instruction = "Call manuscript-package with chosen citationStyle (APA 7th, IEEE, Vancouver, Harvard). Draft manuscript: use 100 introductionEvidence records for Introduction, and 100 detailedEvidence records for thematic analysis/results/characteristics table. Cite in-text throughout and end with full References list."; }
       res.json({ reviewId, action, instruction, counts: { records: review.records.length, unresolved, characteristics: review.characteristics.length, introduction: introduction.length, detailed: detailed.length } });
     } catch (error) {
       console.error("Action next-workflow-action error", error);

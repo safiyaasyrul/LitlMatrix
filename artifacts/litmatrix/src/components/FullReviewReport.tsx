@@ -390,8 +390,13 @@ export default function FullReviewReport({
       md += `The synthesis focuses on the principal recurring patterns supported by the final included records. Themes are presented concisely and preserve differences in methods, contexts, and reported outcomes.\n\n`;
     }
     synthesis.subtopics.forEach((sub) => {
-      md += `#### ${sub.title.replace(/^\d+(?:\.\d+)*\.?\s*/, "")}\n${formatProse(sub.prose)}\n\n`;
-    });
+  const supportingRecords = includedRecords.filter((record) =>
+    (sub.supportingRecordIds || []).includes(record.id)
+  );
+
+  md += `#### ${sub.title.replace(/^\d+(?:\.\d+)*\.?\s*/, "")}\n`;
+  md += `${formatEvidenceProse(sub.prose, supportingRecords.length ? supportingRecords : includedRecords)}\n\n`;
+});
 
     md += `## 4. Discussion\n\n`;
     md += `### 4.1 Principal Findings\n${formatProse(discussion.item23aGeneralInterpretation)}\n\n`;
@@ -404,12 +409,24 @@ export default function FullReviewReport({
     if (protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) {
       md += `## Appendix A. Eligibility Criteria\n\n`;
       if (protocol.eligibilityCriteria.inclusion.length) {
+<<<<<<< HEAD
         md += `### A.1 Inclusion Criteria\n\n`;
         md += `${formatCriteriaProse(protocol.eligibilityCriteria.inclusion, "inclusion")}\n\n`;
       }
       if (protocol.eligibilityCriteria.exclusion.length) {
         md += `### A.2 Exclusion Criteria\n\n`;
         md += `${formatCriteriaProse(protocol.eligibilityCriteria.exclusion, "exclusion")}\n\n`;
+=======
+  md += `### A.1 Inclusion Criteria\n\n`;
+  md += `${protocol.eligibilityCriteria.inclusion.join(". ")}.\n\n`;
+}
+
+if (protocol.eligibilityCriteria.exclusion.length) {
+  md += `### A.2 Exclusion Criteria\n\n`;
+  md += `${protocol.eligibilityCriteria.exclusion.join(". ")}.\n\n`;
+}
+        md += `\n`;
+>>>>>>> c401df7b889f45bb193a2bcb326f6aaea95ef664
       }
     }
 
@@ -750,13 +767,19 @@ export default function FullReviewReport({
   <h2>5. Conclusions</h2>
   <p>${citationFreeConclusion}</p>
 
-  <h2>Figure 1. Adapted PRISMA 2020 flow diagram</h2>
-  <p><img src="${svgToDataUri(prismaSvg)}" alt="Adapted PRISMA 2020 flow diagram" style="width:100%; max-width:900px;"/></p>
-
-  ${(protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) ? `
+   ${(protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) ? `
     <h2>Appendix A. Eligibility Criteria</h2>
+<<<<<<< HEAD
     ${protocol.eligibilityCriteria.inclusion.length ? `<h3>A.1 Inclusion Criteria</h3><p>${formatCriteriaProse(protocol.eligibilityCriteria.inclusion, "inclusion")}</p>` : ""}
     ${protocol.eligibilityCriteria.exclusion.length ? `<h3>A.2 Exclusion Criteria</h3><p>${formatCriteriaProse(protocol.eligibilityCriteria.exclusion, "exclusion")}</p>` : ""}
+=======
+    ${protocol.eligibilityCriteria.inclusion.length ? `<h3>A.1 Inclusion Criteria</h3><p>
+  ${protocol.eligibilityCriteria.inclusion.join(". ")}.
+</p>` : ""}
+    ${protocol.eligibilityCriteria.exclusion.length ? `<h3>A.2 Exclusion Criteria</h3><p>
+  ${protocol.eligibilityCriteria.enclusion.join(". ")}.
+</p>` : ""}
+>>>>>>> c401df7b889f45bb193a2bcb326f6aaea95ef664
   ` : ""}
 
   ${protocol.searchStrategies.length ? `

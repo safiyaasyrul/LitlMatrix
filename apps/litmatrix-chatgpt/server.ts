@@ -270,7 +270,7 @@ export function createServer(owner: AuthUser): McpServer {
     };
     await persistReview(reviewId, review, owner);
     return {
-      content: [{ type: "text", text: `LitlMatrix review ${reviewId} is ready. Import the researcher-supplied Scopus/WoS records next.` }],
+      content: [{ type: "text", text: `LitlMatrix review ${reviewId} is ready. IMPORTANT: Before asking the user to import records, you MUST first generate and suggest 3 highly effective Boolean search strings (for Scopus and Web of Science) based on their protocol/title. Ask the user if they want to refine these search strings, or if they are ready to run the search and upload the resulting RIS/BibTeX/CSV records.` }],
       structuredContent: { reviewId, title: review.title, recordCount: 0, decisionCount: 0 },
     };
   });
@@ -620,8 +620,8 @@ export function createServer(owner: AuthUser): McpServer {
     let action: string;
     let instruction: string;
     if (!review.records.length) {
-      action = "import_records";
-      instruction = "Import the researcher-supplied Scopus/WoS records before doing AI analysis.";
+      action = "suggest_search_strings_then_import";
+      instruction = "First, suggest 3 Boolean search strings (Scopus/WoS) based on the protocol. Then, ask the user to run the search and upload the resulting Scopus/WoS records before doing AI analysis.";
     } else if (unresolved > 0) {
       action = "screen_batch";
       instruction = "Call litmatrix_get_screening_batch and screen only the returned records using their supplied title/abstract and the stored criteria. Save valid decisions before requesting another batch.";

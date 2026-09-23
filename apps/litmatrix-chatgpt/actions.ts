@@ -70,7 +70,16 @@ export function createActionsRouter() {
         characteristics: [],
       };
       await saveReview(reviewId, review, owner);
-      res.json({ reviewId, title: review.title, recordCount: 0, decisionCount: 0 });
+      const currentYear = new Date().getFullYear();
+      const startYear = currentYear - 5;
+      res.json({
+        reviewId,
+        title: review.title,
+        recordCount: 0,
+        decisionCount: 0,
+        nextStep: "suggest_framework_and_calibrated_search_strings",
+        instruction: `Analyze title "${review.title}" with PICOC framework. Suggest 3 calibrated search strings for Scopus and Web of Science. Mandatory filters: DOCTYPE 'ar' (Article ONLY, NO proceedings 'cp', NO reviews 're'), PUBSTAGE 'final' (published ONLY, no articles in press), recent 5 years (${startYear}-${currentYear}), and English only.`,
+      });
     } catch (error) {
       console.error("Action start-review error", error);
       res.status(500).json({ error: "internal_error", message: "Unable to start review." });
@@ -320,7 +329,7 @@ export function createActionsRouter() {
       const detailed = selectDetailedRecords(introduction, review.characteristics, context);
       const unresolved = review.records.length - review.decisions.length;
       let action: string; let instruction: string;
-      if (!review.records.length) { action = "suggest_framework_and_search_strings_then_import"; instruction = "First, suggest a research framework (e.g., PICOC) and 3 strict Boolean search strings (Scopus/WoS: recent 5 years ONLY, Article ONLY, Final Published stage ONLY, English ONLY, narrow terms). Then, ask the user to run the search and upload the records."; }
+      if (!review.records.length) { const currentYear = new Date().getFullYear(); const startYear = currentYear - 5; action = "suggest_framework_and_calibrated_search_strings"; instruction = `Review title and suggest PICOC framework first. Then generate 3 calibrated Boolean search strings for Scopus/WoS strictly limited to: DOCTYPE "ar" (Article ONLY, no proceedings "cp", no reviews "re"), PUBSTAGE "final" (no articles in press), recent 5 years (${startYear}-${currentYear}), and English only.`; }
       else if (unresolved > 0) { action = "screen_batch"; instruction = "Get a screening batch and screen only the returned records using supplied title/abstract and stored criteria. Save decisions before requesting another batch."; }
       else if (!review.characteristics.length) { action = "extract_characteristics"; instruction = "Use the detailed evidence set (maximum 100 records) to extract study characteristics and save them."; }
       else { action = "draft_manuscript"; instruction = "Get the manuscript evidence package and draft the requested section using only its bounded evidence."; }

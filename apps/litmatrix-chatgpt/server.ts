@@ -270,7 +270,7 @@ export function createServer(owner: AuthUser): McpServer {
     };
     await persistReview(reviewId, review, owner);
     return {
-      content: [{ type: "text", text: `LitlMatrix review ${reviewId} is ready. IMPORTANT: Before asking the user to import records, you MUST first generate and suggest 3 highly effective Boolean search strings (for Scopus and Web of Science) based on their protocol/title. Ask the user if they want to refine these search strings, or if they are ready to run the search and upload the resulting RIS/BibTeX/CSV records.` }],
+      content: [{ type: "text", text: `LitlMatrix review ${reviewId} is ready. IMPORTANT: Before asking the user to import records, you MUST first:\n1. Suggest an appropriate research framework (e.g., PICOC, PICO, SPIDER, etc.) based on the provided title and protocol.\n2. Generate and suggest 3 highly targeted Boolean search strings (for Scopus and Web of Science) derived from the suggested framework and protocol.\n\nCRITICAL SEARCH STRING CONSTRAINTS:\n- Narrow the scope: DO NOT use overly broad generic terms.\n- LIMIT TO ARTICLE ONLY (e.g., Scopus: AND ( LIMIT-TO(DOCTYPE, "ar") ). Do NOT include reviews ("re") or proceedings ("cp").\n- PUBLICATION STAGE MUST BE PUBLISHED (e.g., Scopus: AND ( LIMIT-TO(PUBSTAGE, "final") ). Do not include articles in press.\n- PUBLICATION YEAR MUST BE EXACTLY THE RECENT 5 YEARS (e.g., ${startYear} to ${currentYear}).\n- LIMIT TO ENGLISH LANGUAGE.\n\nAfter providing the framework and search strings, ask the user if they want to refine them, or if they are ready to run the search and upload the resulting records.` }],
       structuredContent: { reviewId, title: review.title, recordCount: 0, decisionCount: 0 },
     };
   });
@@ -620,8 +620,8 @@ export function createServer(owner: AuthUser): McpServer {
     let action: string;
     let instruction: string;
     if (!review.records.length) {
-      action = "suggest_search_strings_then_import";
-      instruction = "First, suggest 3 Boolean search strings (Scopus/WoS) based on the protocol. Then, ask the user to run the search and upload the resulting Scopus/WoS records before doing AI analysis.";
+      action = "suggest_framework_and_search_strings_then_import";
+      instruction = "First, suggest a research framework (e.g., PICOC) and 3 strict Boolean search strings (Scopus/WoS: recent 5 years ONLY, Article ONLY, Final Published stage ONLY, English ONLY, narrow terms). Then, ask the user to run the search and upload the records.";
     } else if (unresolved > 0) {
       action = "screen_batch";
       instruction = "Call litmatrix_get_screening_batch and screen only the returned records using their supplied title/abstract and the stored criteria. Save valid decisions before requesting another batch.";

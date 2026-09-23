@@ -320,7 +320,7 @@ export function createActionsRouter() {
       const detailed = selectDetailedRecords(introduction, review.characteristics, context);
       const unresolved = review.records.length - review.decisions.length;
       let action: string; let instruction: string;
-      if (!review.records.length) { action = "suggest_search_strings_then_import"; instruction = "First, suggest 3 Boolean search strings (Scopus/WoS) based on the protocol. Then, ask the user to run the search and upload the resulting Scopus/WoS records before doing AI analysis."; }
+      if (!review.records.length) { action = "suggest_framework_and_search_strings_then_import"; instruction = "First, suggest a research framework (e.g., PICOC) and 3 strict Boolean search strings (Scopus/WoS: recent 5 years ONLY, Article ONLY, Final Published stage ONLY, English ONLY, narrow terms). Then, ask the user to run the search and upload the records."; }
       else if (unresolved > 0) { action = "screen_batch"; instruction = "Get a screening batch and screen only the returned records using supplied title/abstract and stored criteria. Save decisions before requesting another batch."; }
       else if (!review.characteristics.length) { action = "extract_characteristics"; instruction = "Use the detailed evidence set (maximum 100 records) to extract study characteristics and save them."; }
       else { action = "draft_manuscript"; instruction = "Get the manuscript evidence package and draft the requested section using only its bounded evidence."; }

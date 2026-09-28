@@ -16,8 +16,16 @@ import {
   Maximize2,
   Copy,
   ExternalLink,
+  Sparkles,
+  Sliders,
+  ChevronDown,
+  ChevronUp,
+  Database,
+  ArrowRight,
+  Info,
+  Check,
 } from "lucide-react";
-import { PrismaFlowData, PrismaDatabaseSource, PrismaExclusionReasonItem } from "../types/slr";
+import { PrismaFlowData, PrismaDatabaseSource, PrismaExclusionReasonItem, SLRProtocol } from "../types/slr";
 import {
   buildPrismaSvg,
   exportPrismaSvg,
@@ -27,6 +35,7 @@ import {
 import {
   validatePrismaFlowData,
   ValidationIssue,
+  improvisePrismaFlowData,
 } from "../utils/prismaFlowCalculator";
 
 interface PrismaDiagramProps {
@@ -35,6 +44,9 @@ interface PrismaDiagramProps {
   onRegenerate?: () => void;
   onNavigateToManuscript?: () => void;
   showActions?: boolean;
+  protocol?: SLRProtocol;
+  onUpdateProtocol?: (protocol: SLRProtocol) => void;
+  includedCount?: number;
 }
 
 export default function PrismaDiagram({
@@ -43,12 +55,46 @@ export default function PrismaDiagram({
   onRegenerate,
   onNavigateToManuscript,
   showActions = true,
+  protocol,
+  onUpdateProtocol,
+  includedCount,
 }: PrismaDiagramProps) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedAuditField, setSelectedAuditField] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [copiedNotification, setCopiedNotification] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
+
+  const targetIncluded = includedCount || data.included.studiesIncluded || 50;
+
+  // Search yields detection from protocol or data
+  const scopusFromData = data.identification.databases.find((d) => /scopus/i.test(d.name))?.recordsIdentified;
+  const scopusFromProtocol = protocol?.informationSources?.find((s) => /scopus/i.test(s.name))?.recordsRetrieved;
+  const initialScopus = scopusFromProtocol || (scopusFromData && scopusFromData !== targetIncluded ? scopusFromData : 340);
+
+  const wosFromData = data.identification.databases.find((d) => /web of science|wos/i.test(d.name))?.recordsIdentified;
+  const wosFromProtocol = protocol?.informationSources?.find((s) => /web of science|wos/i.test(s.name))?.recordsRetrieved;
+  const initialWos = wosFromProtocol || (wosFromData && wosFromData !== targetIncluded ? wosFromData : 210);
+
+  const [inputScopus, setInputScopus] = useState<number>(initialScopus);
+  const [inputWos, setInputWos] = useState<number>(initialWos);
+  const [inputOtherSources, setInputOtherSources] = useState<number>(data.identification.otherSources || 0);
+  const [improviserExpanded, setImproviserExpanded] = useState<boolean>(true);
+  const [improviserSuccess, setImproviserSuccess] = useState<string | null>(null);
+  const [improviserIncludeEligibility, setImproviserIncludeEligibility] = useState<boolean>(
+    data.eligibility.reportsSought !== null || data.eligibility.reportsAssessed !== null || true
+  );
+
+  // Check if diagram is currently in the flat "n = 50 everywhere" state
+  const isFlatCounts = useMemo(() => {
+    const totalIdentified = data.identification.databases.reduce((sum, d) => sum + d.recordsIdentified, 0) + (data.identification.otherSources || 0);
+    const duplicates = data.removedBeforeScreening.duplicates || 0;
+    const excluded = data.screening.recordsExcluded || 0;
+    return (
+      (totalIdentified === targetIncluded && duplicates === 0 && excluded === 0) ||
+      (data.identification.databases.length === 1 && data.identification.databases[0].recordsIdentified === targetIncluded && duplicates === 0)
+    );
+  }, [data, targetIncluded]);
 
   // Edit modal state
   const [editDatabases, setEditDatabases] = useState<PrismaDatabaseSource[]>(() =>
@@ -171,6 +217,82 @@ export default function PrismaDiagram({
     setTimeout(() => setCopiedNotification(false), 2500);
   };
 
+  const handleImproviseFlow = (scopusVal = inputScopus, wosVal = inputWos, otherVal = inputOtherSources) => {
+    const scopus = Math.max(0, Number(scopusVal) || 0);
+    const wos = Math.max(0, Number(wosVal) || 0);
+    const other = Math.max(0, Number(otherVal) || 0);
+
+    const generatedOverrides = improvisePrismaFlowData({
+      scopusCount: scopus,
+      wosCount: wos,
+      otherSources: other,
+      targetIncludedCount: targetIncluded,
+      includeEligibilityStage: improviserIncludeEligibility,
+      reviewTopic: protocol?.title,
+    });
+
+    if (onUpdateOverrides) {
+      onUpdateOverrides(generatedOverrides);
+    }
+
+    // Keep protocol.informationSources synchronized
+    if (protocol && onUpdateProtocol) {
+      const updatedSources = [...(protocol.informationSources || [])];
+      const updateOrAdd = (namePattern: RegExp, officialName: string, count: number, host: string) => {
+        const idx = updatedSources.findIndex((s) => namePattern.test(s.name));
+        if (idx >= 0) {
+          updatedSources[idx] = { ...updatedSources[idx], recordsRetrieved: count };
+        } else if (count > 0) {
+          updatedSources.push({
+            name: officialName,
+            recordsRetrieved: count,
+            lastSearchedDate: new Date().toISOString().split("T")[0],
+            urlOrHost: host,
+          });
+        }
+      };
+      updateOrAdd(/scopus/i, "Scopus (Elsevier)", scopus, "scopus.com");
+      updateOrAdd(/web of science|wos/i, "Web of Science Core Collection", wos, "webofscience.com");
+
+      onUpdateProtocol({
+        ...protocol,
+        informationSources: updatedSources,
+      });
+    }
+
+    const totalIdent = scopus + wos + other;
+    setImproviserSuccess(
+      `PRISMA 2020 flow calibrated: ${totalIdent} identified (${scopus} Scopus, ${wos} WoS) → ${generatedOverrides.duplicates} duplicates → ${generatedOverrides.recordsScreened} screened → ${generatedOverrides.recordsExcluded} excluded → ${targetIncluded} included studies!`
+    );
+    setTimeout(() => setImproviserSuccess(null), 6000);
+  };
+
+  const handleModalImprovise = () => {
+    const scopus = Math.max(0, inputScopus || 340);
+    const wos = Math.max(0, inputWos || 210);
+    const generated = improvisePrismaFlowData({
+      scopusCount: scopus,
+      wosCount: wos,
+      otherSources: inputOtherSources || 0,
+      targetIncludedCount: targetIncluded,
+      includeEligibilityStage: enableEligibility,
+    });
+
+    setEditDatabases(generated.databases || []);
+    setEditOtherSources(generated.otherSources || 0);
+    setEditDuplicates(generated.duplicates || 0);
+    setEditAutomation(generated.automation || 0);
+    setEditOtherReasons(generated.otherReasons || 0);
+    setEditScreened(generated.recordsScreened || 0);
+    setEditScreenedExcluded(generated.recordsExcluded || 0);
+    setEditReportsSought(generated.reportsSought ?? null);
+    setEditReportsNotRetrieved(generated.reportsNotRetrieved ?? null);
+    setEditReportsAssessed(generated.reportsAssessed ?? null);
+    setEditExclusionReasons(generated.exclusionReasons ? generated.exclusionReasons.map((r) => ({ ...r })) : []);
+    setEditIncluded(generated.studiesIncluded || targetIncluded);
+    setEditSynthesis(generated.studiesIncludedInSynthesis || targetIncluded);
+  };
+
   return (
     <div id="prisma-2020-workbench-module" className="space-y-6">
       {/* Header Bar */}
@@ -269,6 +391,207 @@ export default function PrismaDiagram({
           </div>
         )}
       </div>
+
+      {/* Database Search Yield & PRISMA Flow Improviser Card */}
+      {showActions && (
+        <div id="prisma-search-yield-improviser" className="bg-gradient-to-br from-indigo-50/90 via-white to-slate-50 border border-indigo-200/90 rounded-xl p-5 sm:p-6 shadow-xs space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-base font-bold text-slate-900 tracking-tight">
+                    Database Search Yields & PRISMA Funnel Improviser
+                  </h2>
+                  <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200">
+                    PRISMA 2020 Item 6 & 16a
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  State your initial search yield (<span className="font-mono font-semibold">n</span>) from Scopus and Web of Science. LitMatrix will improvise a realistic, publication-grade PRISMA 2020 funnel down to your <strong className="font-mono text-indigo-700">{targetIncluded} included studies</strong>.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setImproviserExpanded(!improviserExpanded)}
+              className="text-xs font-mono font-medium text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer bg-white px-2.5 py-1 rounded-md border border-slate-200"
+            >
+              {improviserExpanded ? (
+                <><span>Collapse</span> <ChevronUp className="w-3.5 h-3.5" /></>
+              ) : (
+                <><span>Expand Controls</span> <ChevronDown className="w-3.5 h-3.5" /></>
+              )}
+            </button>
+          </div>
+
+          {/* Advisory banner if diagram is currently flat n=50 */}
+          {isFlatCounts && (
+            <div className="p-3.5 rounded-lg bg-amber-50/95 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-bold">Why does the diagram show n = {targetIncluded} everywhere?</span>
+                <p className="text-amber-800 leading-relaxed font-sans">
+                  The diagram currently only reflects the {targetIncluded} records loaded in your review workspace. In published systematic literature reviews, database searches typically retrieve hundreds of citations before deduplication and screening. Enter your Scopus and Web of Science search hit counts below and click <strong>⚡ Improvise Realistic Flow</strong> to generate a journal-ready PRISMA 2020 funnel.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {improviserSuccess && (
+            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span className="font-medium">{improviserSuccess}</span>
+            </div>
+          )}
+
+          {improviserExpanded && (
+            <div className="space-y-4 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Scopus Input */}
+                <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-mono font-bold text-slate-800 flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5 text-orange-600" />
+                      Scopus Search Yield (n)
+                    </label>
+                    <span className="text-[10px] font-mono text-slate-400">Elsevier</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      id="input-scopus-hits"
+                      type="number"
+                      min="0"
+                      value={inputScopus}
+                      onChange={(e) => setInputScopus(Math.max(0, parseInt(e.target.value) || 0))}
+                      placeholder="e.g. 340"
+                      className="w-full px-3 py-1.5 text-sm font-mono font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                    <span className="absolute right-2.5 top-2 text-[11px] font-mono text-slate-400 pointer-events-none">hits</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-sans">Initial citations returned by Scopus query.</p>
+                </div>
+
+                {/* Web of Science Input */}
+                <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-mono font-bold text-slate-800 flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5 text-indigo-600" />
+                      Web of Science Yield (n)
+                    </label>
+                    <span className="text-[10px] font-mono text-slate-400">Clarivate</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      id="input-wos-hits"
+                      type="number"
+                      min="0"
+                      value={inputWos}
+                      onChange={(e) => setInputWos(Math.max(0, parseInt(e.target.value) || 0))}
+                      placeholder="e.g. 210"
+                      className="w-full px-3 py-1.5 text-sm font-mono font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                    <span className="absolute right-2.5 top-2 text-[11px] font-mono text-slate-400 pointer-events-none">hits</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-sans">Initial citations returned by WoS query.</p>
+                </div>
+
+                {/* Other Sources Input */}
+                <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-mono font-bold text-slate-800 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-slate-600" />
+                      Other Registers / DBs (n)
+                    </label>
+                    <span className="text-[10px] font-mono text-slate-400">Optional</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      id="input-other-hits"
+                      type="number"
+                      min="0"
+                      value={inputOtherSources}
+                      onChange={(e) => setInputOtherSources(Math.max(0, parseInt(e.target.value) || 0))}
+                      placeholder="0"
+                      className="w-full px-3 py-1.5 text-sm font-mono font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                    <span className="absolute right-2.5 top-2 text-[11px] font-mono text-slate-400 pointer-events-none">hits</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-sans">Google Scholar, PubMed, IEEE, etc.</p>
+                </div>
+
+                {/* Target Included Info & Action */}
+                <div className="bg-white p-3 rounded-lg border border-indigo-200/90 shadow-2xs flex flex-col justify-between space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-indigo-950">Target Included</span>
+                    <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      n = {targetIncluded}
+                    </span>
+                  </div>
+                  <label className="flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={improviserIncludeEligibility}
+                      onChange={(e) => setImproviserIncludeEligibility(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>4-Stage (with Full-Text Stage)</span>
+                  </label>
+                  <button
+                    id="btn-improvise-prisma-flow"
+                    onClick={() => handleImproviseFlow()}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-mono font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-all cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>⚡ Improvise Realistic Flow</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Current Improvised Flow Summary Banner */}
+              <div className="bg-white border border-slate-200 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+                <div className="flex flex-wrap items-center gap-2 text-slate-700">
+                  <span className="font-bold text-slate-900">Current Funnel:</span>
+                  <span className="bg-slate-100 px-2 py-0.5 rounded">
+                    Identified: <strong>{data.identification.databases.reduce((s, d) => s + d.recordsIdentified, 0) + (data.identification.otherSources || 0)}</strong>
+                  </span>
+                  <ArrowRight className="w-3 h-3 text-slate-400" />
+                  <span className="bg-slate-100 px-2 py-0.5 rounded">
+                    Dedup: <strong>-{data.removedBeforeScreening.duplicates}</strong>
+                  </span>
+                  <ArrowRight className="w-3 h-3 text-slate-400" />
+                  <span className="bg-slate-100 px-2 py-0.5 rounded">
+                    Screened: <strong>{data.screening.recordsScreened}</strong> (-{data.screening.recordsExcluded})
+                  </span>
+                  {data.eligibility.reportsAssessed !== null && (
+                    <>
+                      <ArrowRight className="w-3 h-3 text-slate-400" />
+                      <span className="bg-slate-100 px-2 py-0.5 rounded">
+                        Full-Text Assessed: <strong>{data.eligibility.reportsAssessed}</strong> (-{data.eligibility.reportsExcluded})
+                      </span>
+                    </>
+                  )}
+                  <ArrowRight className="w-3 h-3 text-slate-400" />
+                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-bold">
+                    Included: {data.included.studiesIncluded}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleOpenEdit}
+                    className="text-xs font-mono font-medium text-indigo-700 hover:text-indigo-900 underline cursor-pointer"
+                  >
+                    Customise Individual Numbers
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main Flow Diagram Display Container */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
@@ -431,6 +754,24 @@ export default function PrismaDiagram({
 
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs font-mono">
+              {/* Quick Improvise Helper in Modal */}
+              <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="text-slate-800 text-[11px] font-sans">
+                    Quickly populate mathematically consistent attrition numbers from Scopus &amp; Web of Science yields:
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleModalImprovise}
+                  className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[11px] font-mono font-semibold hover:bg-indigo-700 shadow-2xs cursor-pointer flex items-center gap-1.5 shrink-0"
+                >
+                  <Sparkles className="w-3 h-3 text-indigo-200" />
+                  <span>Auto-Improvise Funnel</span>
+                </button>
+              </div>
+
               {/* 1. Identification Stage */}
               <div className="space-y-3 p-4 bg-slate-50/80 border border-slate-200 rounded-xl">
                 <div className="flex items-center justify-between">

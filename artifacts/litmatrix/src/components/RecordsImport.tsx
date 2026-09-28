@@ -20,6 +20,7 @@ import {
   Filter,
   CheckCheck,
 } from "lucide-react";
+import { SLRProtocol } from "../types/slr";
 
 interface RecordsImportProps {
   records: SLRRecord[];
@@ -27,6 +28,8 @@ interface RecordsImportProps {
   dupesRemoved: number | null;
   onUpdateDupesRemoved: (count: number) => void;
   onAutoSyncAllStagesFromRecords?: (customRecordsList?: SLRRecord[]) => void;
+  protocol?: SLRProtocol;
+  onUpdateProtocol?: (protocol: SLRProtocol) => void;
 }
 
 export default function RecordsImport({
@@ -35,6 +38,8 @@ export default function RecordsImport({
   dupesRemoved,
   onUpdateDupesRemoved,
   onAutoSyncAllStagesFromRecords,
+  protocol,
+  onUpdateProtocol,
 }: RecordsImportProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importedFiles, setImportedFiles] = useState<{ name: string; count: number; db: string }[]>([]);
@@ -133,6 +138,26 @@ export default function RecordsImport({
       onUpdateDupesRemoved(0);
       showToast("Cleared all records from library.");
     }
+  };
+
+  const updateDatabaseYield = (dbName: string, count: number) => {
+    if (!protocol || !onUpdateProtocol) return;
+    const sources = [...(protocol.informationSources || [])];
+    const idx = sources.findIndex((s) => s.name.toLowerCase().includes(dbName.toLowerCase()));
+    if (idx >= 0) {
+      sources[idx] = { ...sources[idx], recordsRetrieved: Math.max(0, count) };
+    } else {
+      sources.push({
+        name: dbName,
+        recordsRetrieved: Math.max(0, count),
+        lastSearchedDate: new Date().toISOString().split("T")[0],
+        urlOrHost: `${dbName.toLowerCase().replace(/\s+/g, "")}.com`,
+      });
+    }
+    onUpdateProtocol({
+      ...protocol,
+      informationSources: sources,
+    });
   };
 
   // Database breakdown calculations
@@ -266,6 +291,62 @@ export default function RecordsImport({
             )}
           </div>
         </div>
+
+        {/* PRISMA Initial Search Yields (Item 6) */}
+        {protocol && onUpdateProtocol && (
+          <div className="p-4 bg-slate-50/90 border border-slate-200 rounded-xl space-y-3 font-mono text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-indigo-600" />
+                <span className="font-bold text-slate-800 uppercase tracking-wide">
+                  PRISMA 2020 Initial Search Yields (Item 6 Identification)
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-500 font-sans">
+                State raw search hits from Scopus and Web of Science for your PRISMA Flow Diagram
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-[11px] text-slate-600 font-medium">
+                  <span className="flex items-center gap-1"><Database className="w-3 h-3 text-orange-600" /> Scopus Yield (n):</span>
+                  <span className="text-[10px] text-slate-400">Elsevier</span>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  value={protocol.informationSources.find(s => /scopus/i.test(s.name))?.recordsRetrieved || ""}
+                  placeholder="e.g. 340"
+                  onChange={(e) => updateDatabaseYield("Scopus", parseInt(e.target.value) || 0)}
+                  className="w-full px-2.5 py-1 text-xs font-mono font-bold text-slate-900 border border-slate-200 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-[11px] text-slate-600 font-medium">
+                  <span className="flex items-center gap-1"><Database className="w-3 h-3 text-indigo-600" /> Web of Science Yield (n):</span>
+                  <span className="text-[10px] text-slate-400">Clarivate</span>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  value={protocol.informationSources.find(s => /web of science|wos/i.test(s.name))?.recordsRetrieved || ""}
+                  placeholder="e.g. 210"
+                  onChange={(e) => updateDatabaseYield("Web of Science", parseInt(e.target.value) || 0)}
+                  className="w-full px-2.5 py-1 text-xs font-mono font-bold text-slate-900 border border-slate-200 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="bg-white p-2.5 rounded-lg border border-indigo-100 shadow-2xs flex flex-col justify-between">
+                <div className="text-[11px] text-slate-600 font-medium">Total Stated Search Yield</div>
+                <div className="text-base font-bold text-indigo-700">
+                  {protocol.informationSources.reduce((s, i) => s + (i.recordsRetrieved || 0), 0)} citations
+                </div>
+                <div className="text-[10px] text-slate-400 font-sans">Feeds into Step 11: PRISMA 2020 Flow Diagram</div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Import Mode Selector: Replace vs Append */}
         <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">

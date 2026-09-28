@@ -717,6 +717,31 @@ const normalizedStrategies = fallbackStrategies.map((fallback) => {
     }
   };
 
+  const updateSourceCount = (dbName: string, count: number) => {
+    const existing = protocol.informationSources.find((s) => s.name.toLowerCase().includes(dbName.toLowerCase()));
+    if (existing) {
+      onUpdateProtocol({
+        ...protocol,
+        informationSources: protocol.informationSources.map((s) =>
+          s.name.toLowerCase().includes(dbName.toLowerCase()) ? { ...s, recordsRetrieved: Math.max(0, count) } : s
+        ),
+      });
+    } else {
+      onUpdateProtocol({
+        ...protocol,
+        informationSources: [
+          ...protocol.informationSources,
+          {
+            name: dbName,
+            lastSearchedDate: new Date().toISOString().split("T")[0],
+            urlOrHost: `${dbName.toLowerCase().replace(/\s+/g, "")}.com`,
+            recordsRetrieved: Math.max(0, count),
+          },
+        ],
+      });
+    }
+  };
+
   // Group keywords by category
   const categorizedKeywords = useMemo(() => {
     const groups: Record<KeywordItem["category"], KeywordItem[]> = {
@@ -1123,6 +1148,22 @@ const normalizedStrategies = fallbackStrategies.map((fallback) => {
                       />
                     </div>
 
+                    <div className="flex items-center gap-1.5 text-xs font-mono text-slate-700 bg-indigo-50/70 border border-indigo-200/80 px-2.5 py-1 rounded-lg">
+                      <Database className="w-3.5 h-3.5 text-indigo-600" />
+                      <span className="font-semibold text-indigo-950">Search Yield:</span>
+                      <span className="text-slate-500">n =</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={sourceInfo?.recordsRetrieved || ""}
+                        placeholder="0"
+                        onChange={(e) => updateSourceCount(strat.database, parseInt(e.target.value) || 0)}
+                        className="w-16 p-1 text-[11px] font-mono font-bold border border-indigo-200 rounded-md bg-white text-indigo-900 text-center focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        title="State initial citations retrieved from this database to populate your PRISMA 2020 flow diagram"
+                      />
+                      <span className="text-[10px] text-indigo-600 font-sans">hits</span>
+                    </div>
+
                     <button
                       onClick={() => copyString(strat.database, strat.query)}
                       className="flex items-center gap-1.5 px-3 py-1 text-xs font-mono text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition-colors cursor-pointer"
@@ -1157,6 +1198,19 @@ const normalizedStrategies = fallbackStrategies.map((fallback) => {
               </div>
             );
           })}
+
+          {/* PRISMA Yields Summary Box */}
+          <div className="p-4 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+            <div className="flex items-center gap-2 text-slate-700">
+              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <span>
+                Total Initial Search Yield: <strong>{protocol.informationSources.reduce((s, i) => s + (i.recordsRetrieved || 0), 0)} citations</strong> stated across databases ({protocol.informationSources.filter(s => (s.recordsRetrieved || 0) > 0).map(s => `${s.name}: n = ${s.recordsRetrieved}`).join(", ") || "none entered yet"}).
+              </span>
+            </div>
+            <span className="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded font-semibold">
+              ✓ Synchronized to Step 11: PRISMA 2020 Flow Diagram
+            </span>
+          </div>
         </div>
       )}
       

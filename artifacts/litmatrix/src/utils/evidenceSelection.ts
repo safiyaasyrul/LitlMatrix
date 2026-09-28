@@ -191,7 +191,7 @@ export const selectIntroductionRecords = (
 /**
  * Stage 2:
  *
- * From the 100-record title-relevant set, select up to 50
+ * From ALL included records, select up to 100
  * records using method/study/content/intervention evidence.
  *
  * Again, this is entirely local.
@@ -202,7 +202,7 @@ export const selectDetailedEvidenceRecords = (
   protocol?: SLRProtocol,
   maxLimit: number = MAX_DETAILED_RECORDS
 ): SLRRecord[] => {
-  const boundedLimit = Math.max(1, Math.min(100, maxLimit));
+  const boundedLimit = Math.max(1, Math.min(MAX_DETAILED_RECORDS, maxLimit));
   if (records.length <= boundedLimit) {
     return [...records];
   }
@@ -371,7 +371,10 @@ export const selectDetailedEvidenceRecords = (
 /**
  * Convenience function used by synthesis.
  *
- * 200 → 100 → 100 (configurable)
+ * Both stages draw from all included records,
+ * each independently selecting up to 100 records.
+ * Introduction: title-relevance score.
+ * Detailed (thematic/discussion): evidence-completeness score.
  */
 export const buildEvidenceBudget = (
   records: SLRRecord[],
@@ -387,9 +390,12 @@ export const buildEvidenceBudget = (
       protocol
     ).slice(0, maxIntro);
 
+  // Draw detailed records from ALL included records (not just intro subset)
+  // so the thematic synthesis, discussion, and introduction each get
+  // their own independent best-100 selection.
   const detailedRecords =
     selectDetailedEvidenceRecords(
-      introductionRecords,
+      records,
       characteristics,
       protocol,
       maxDet

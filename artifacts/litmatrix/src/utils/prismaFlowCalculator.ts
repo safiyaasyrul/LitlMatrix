@@ -24,6 +24,165 @@ export interface CalculatePrismaFlowOptions {
   manualOverrides?: PrismaFlowData["manualOverrides"];
   reviewId?: string;
   defaultSource?: string;
+  informationSources?: Array<{
+    name: string;
+    recordsRetrieved?: number;
+    lastSearchedDate?: string;
+  }>;
+}
+
+export interface ImprovisePrismaOptions {
+  scopusCount: number;
+  wosCount: number;
+  otherDatabases?: Array<{ name: string; count: number }>;
+  otherSources?: number;
+  targetIncludedCount: number;
+  includeEligibilityStage?: boolean;
+  reviewTopic?: string;
+}
+
+/**
+ * Improvise a realistic, mathematically coherent PRISMA 2020 screening and eligibility funnel
+ * from user-specified database search yields (Scopus, Web of Science, etc.) down to the target
+ * included studies count. Eliminates artificial "n = 50 everywhere" artifacts.
+ */
+export function improvisePrismaFlowData(options: ImprovisePrismaOptions): NonNullable<PrismaFlowData["manualOverrides"]> {
+  const {
+    scopusCount = 0,
+    wosCount = 0,
+    otherDatabases = [],
+    otherSources = 0,
+    targetIncludedCount = 50,
+    includeEligibilityStage = true,
+  } = options;
+
+  const targetIncluded = Math.max(1, targetIncludedCount);
+
+  // Build databases list with sanitized non-negative integers
+  const dbList: PrismaDatabaseSource[] = [];
+  if (scopusCount > 0 || (scopusCount === 0 && wosCount === 0 && otherDatabases.length === 0)) {
+    dbList.push({ name: "Scopus", recordsIdentified: Math.max(0, Math.round(scopusCount)) });
+  }
+  if (wosCount > 0) {
+    dbList.push({ name: "Web of Science Core Collection", recordsIdentified: Math.max(0, Math.round(wosCount)) });
+  }
+  otherDatabases.forEach((od) => {
+    if (od.name.trim() && od.count > 0) {
+      dbList.push({ name: od.name.trim(), recordsIdentified: Math.max(0, Math.round(od.count)) });
+    }
+  });
+
+  if (dbList.length === 0) {
+    dbList.push({ name: "Scopus", recordsIdentified: targetIncluded });
+  }
+
+  const safeOtherSources = Math.max(0, Math.round(otherSources));
+  const totalDbCount = dbList.reduce((sum, d) => sum + d.recordsIdentified, 0);
+  const totalIdentified = totalDbCount + safeOtherSources;
+
+  // Edge case: if totalIdentified <= targetIncluded, direct 1:1 mapping
+  if (totalIdentified <= targetIncluded) {
+    return {
+      databases: dbList,
+      otherSources: safeOtherSources,
+      duplicates: 0,
+      automation: 0,
+      otherReasons: 0,
+      recordsScreened: totalIdentified,
+      recordsExcluded: 0,
+      reportsSought: includeEligibilityStage ? totalIdentified : null,
+      reportsNotRetrieved: includeEligibilityStage ? 0 : null,
+      reportsAssessed: includeEligibilityStage ? totalIdentified : null,
+      reportsExcluded: 0,
+      exclusionReasons: [],
+      studiesIncluded: Math.min(totalIdentified, targetIncluded),
+      studiesIncludedInSynthesis: Math.min(100, totalIdentified, targetIncluded),
+      studiesIncludedInMetaAnalysis: null,
+    };
+  }
+
+  // 1. Realistic duplicate removal (~16% - 20% for multi-database searches)
+  // Ensure recordsScreened >= targetIncluded
+  let duplicates = Math.round(totalIdentified * 0.18);
+  if (totalIdentified - duplicates < targetIncluded + 10) {
+    duplicates = Math.max(0, totalIdentified - (targetIncluded + 10));
+  }
+  const recordsScreened = Math.max(targetIncluded, totalIdentified - duplicates);
+
+  if (!includeEligibilityStage) {
+    // 3-Stage Direct Flow: Identification -> Screening -> Included
+    const recordsExcluded = Math.max(0, recordsScreened - targetIncluded);
+    return {
+      databases: dbList,
+      otherSources: safeOtherSources,
+      duplicates,
+      automation: 0,
+      otherReasons: 0,
+      recordsScreened,
+      recordsExcluded,
+      reportsSought: null,
+      reportsNotRetrieved: null,
+      reportsAssessed: null,
+      reportsExcluded: 0,
+      exclusionReasons: [],
+      studiesIncluded: targetIncluded,
+      studiesIncludedInSynthesis: Math.min(100, targetIncluded),
+      studiesIncludedInMetaAnalysis: null,
+    };
+  }
+
+  // 2. 4-Stage Standard PRISMA 2020 Flow:
+  // Title/Abstract Screening -> Full-Text Retrieval & Eligibility -> Included
+  // Target reports sought for retrieval: around 1.8x to 2.2x targetIncluded, bounded by recordsScreened
+  const desiredSought = Math.min(
+    Math.round(recordsScreened * 0.25),
+    Math.max(targetIncluded + 15, Math.round(targetIncluded * 1.9))
+  );
+  const reportsSought = Math.min(recordsScreened, Math.max(targetIncluded + 6, desiredSought));
+  const recordsExcluded = Math.max(0, recordsScreened - reportsSought);
+
+  // Full-text retrieval attrition: 4% - 8% not retrieved (paywalled, withdrawn, etc.)
+  const reportsNotRetrieved = Math.max(1, Math.min(10, Math.round(reportsSought * 0.06)));
+  const reportsAssessed = Math.max(targetIncluded, reportsSought - reportsNotRetrieved);
+
+  // Full-text eligibility exclusions
+  const reportsExcluded = Math.max(0, reportsAssessed - targetIncluded);
+
+  // Partition reportsExcluded across 4 standard PRISMA 2020 exclusion reasons
+  const exclusionReasons: PrismaExclusionReasonItem[] = [];
+  if (reportsExcluded > 0) {
+    const reason1 = Math.max(1, Math.round(reportsExcluded * 0.38));
+    const reason2 = Math.max(1, Math.round(reportsExcluded * 0.28));
+    const reason3 = Math.max(1, Math.round(reportsExcluded * 0.20));
+    const reason4 = Math.max(0, reportsExcluded - (reason1 + reason2 + reason3));
+
+    exclusionReasons.push(
+      { reason: "Out of target scope / topic or domain mismatch", count: reason1 },
+      { reason: "Ineligible intervention, framework, or technology focus", count: reason2 },
+      { reason: "Insufficient empirical data or missing outcome metrics", count: reason3 },
+    );
+    if (reason4 > 0) {
+      exclusionReasons.push({ reason: "Conference abstract, short paper, or non-peer-reviewed", count: reason4 });
+    }
+  }
+
+  return {
+    databases: dbList,
+    otherSources: safeOtherSources,
+    duplicates,
+    automation: 0,
+    otherReasons: 0,
+    recordsScreened,
+    recordsExcluded,
+    reportsSought,
+    reportsNotRetrieved,
+    reportsAssessed,
+    reportsExcluded,
+    exclusionReasons,
+    studiesIncluded: targetIncluded,
+    studiesIncludedInSynthesis: Math.min(100, targetIncluded),
+    studiesIncludedInMetaAnalysis: null,
+  };
 }
 
 /**
@@ -177,6 +336,17 @@ export function calculatePrismaFlowData(options: CalculatePrismaFlowOptions): Pr
     }));
   } else {
     databases = [{ name: defaultSource, recordsIdentified: 0 }];
+  }
+
+  // If information sources specify initial search retrieval counts (> 0), use those for PRISMA Identification when manual database overrides are not set
+  if (!manualOverrides?.databases && options.informationSources && options.informationSources.some((s) => (s.recordsRetrieved || 0) > 0)) {
+    const validSources = options.informationSources.filter((s) => (s.recordsRetrieved || 0) > 0);
+    if (validSources.length > 0) {
+      databases = validSources.map((s) => ({
+        name: s.name,
+        recordsIdentified: s.recordsRetrieved || 0,
+      }));
+    }
   }
 
   // Apply manual database overrides if supplied

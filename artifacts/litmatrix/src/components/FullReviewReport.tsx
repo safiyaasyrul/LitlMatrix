@@ -409,24 +409,12 @@ export default function FullReviewReport({
     if (protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) {
       md += `## Appendix A. Eligibility Criteria\n\n`;
       if (protocol.eligibilityCriteria.inclusion.length) {
-<<<<<<< HEAD
         md += `### A.1 Inclusion Criteria\n\n`;
         md += `${formatCriteriaProse(protocol.eligibilityCriteria.inclusion, "inclusion")}\n\n`;
       }
       if (protocol.eligibilityCriteria.exclusion.length) {
         md += `### A.2 Exclusion Criteria\n\n`;
         md += `${formatCriteriaProse(protocol.eligibilityCriteria.exclusion, "exclusion")}\n\n`;
-=======
-  md += `### A.1 Inclusion Criteria\n\n`;
-  md += `${protocol.eligibilityCriteria.inclusion.join(". ")}.\n\n`;
-}
-
-if (protocol.eligibilityCriteria.exclusion.length) {
-  md += `### A.2 Exclusion Criteria\n\n`;
-  md += `${protocol.eligibilityCriteria.exclusion.join(". ")}.\n\n`;
-}
-        md += `\n`;
->>>>>>> c401df7b889f45bb193a2bcb326f6aaea95ef664
       }
     }
 

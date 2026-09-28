@@ -1,17 +1,16 @@
 import path from 'path';
-import {defineConfig} from 'vite';
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 const port = Number(process.env.PORT ?? 3000);
-const configRoot = path.resolve(import.meta.dirname);
-const reactPlugin = (await import(path.join(configRoot, 'node_modules/@vitejs/plugin-react/dist/index.js'))).default;
-const tailwindPlugin = (await import(path.join(configRoot, 'node_modules/@tailwindcss/vite/dist/index.mjs'))).default;
 
 export default defineConfig(() => {
   return {
-    plugins: [reactPlugin(), tailwindPlugin()],
+    plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, 'src'),
+        '@': path.resolve(import.meta.dirname, 'src'),
       },
     },
     server: {

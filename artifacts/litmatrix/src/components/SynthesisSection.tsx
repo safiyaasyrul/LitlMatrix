@@ -418,6 +418,10 @@ WRITING RULES:
 35. Do not create a separate sentence for every supplied study. Select and connect the studies that are relevant to the thematic argument.
 
 36. If the supplied evidence is insufficient to establish a meaningful thematic pattern, state this explicitly rather than inferring one.
+  
+37. CRITICAL: Do NOT cluster or dump multiple citations at the end of a sentence or paragraph. Do not write sentences ending with a massive list of citations. 
+
+38. CRITICAL: Ensure comprehensive coverage. Spread citations naturally across the text and make sure you utilize as many of the supplied records as possible in your synthesis.
 
 In the same response, generate exactly five concise, publication-ready
 candidate titles for the systematic literature review. Use only the complete

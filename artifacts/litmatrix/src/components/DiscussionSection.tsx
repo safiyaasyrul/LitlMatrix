@@ -109,8 +109,10 @@ STRICT WRITING RULES:
 3. CRITICAL FORMATTING RULE: Write all text as continuous academic prose paragraphs. DO NOT use bullet points. DO NOT use numbered lists. DO NOT use dash lists. DO NOT use dashes or hyphens as punctuation dividers. Use standard sentence structure with commas, semicolons, and parentheses.
 4. DO NOT mention "PRISMA Item", "PRISMA", "Item 23a", etc. Use natural academic discourse.
 5. CITE AND DISCUSS THE ACTUAL INCLUDED STUDIES by author and year (e.g. Chen et al., 2023). This exact (Author, Year) format is REQUIRED for the manuscript engine to correctly process the references later. Do not prescribe or hard-code a citation style like APA or IEEE. Within each category, discuss authors who share similarities and contrast their results.
-6. Never invent or infer pooled effects, confidence intervals, significance, reviewer activity, full-text assessment, search coverage, validation, or findings absent from the supplied data. Do not describe the application, the review workspace, or the supplied records as deficient.
-7. CRITICAL: The final manuscript must NOT mention: the application name, AI, ChatGPT, Gemini, Claude, OpenAI, or software-specific processing.
+6. CRITICAL: Do NOT cluster or dump multiple citations into a single paragraph or at the end of a sentence (e.g., do not write a sentence ending with 10 citations). Spread citations naturally across the text.
+7. CRITICAL: Ensure comprehensive coverage. You must actively utilize and discuss as many of the supplied records as possible across the four sections.
+8. Never invent or infer pooled effects, confidence intervals, significance, reviewer activity, full-text assessment, search coverage, validation, or findings absent from the supplied data. Do not describe the application, the review workspace, or the supplied records as deficient.
+9. CRITICAL: The final manuscript must NOT mention: the application name, AI, ChatGPT, Gemini, Claude, OpenAI, or software-specific processing.
 
 You MUST write an incredibly detailed and expansive discussion. Structure the response into 4 distinct sections. Every single section MUST be comprehensively elaborated, extensive, and highly detailed (each section MUST be at least 1000-1500 words minimum) to guarantee a final comprehensive manuscript length of at least 12-15 pages:
 1. item23aGeneralInterpretation: Deep, expansive interpretation of findings directly citing included studies, grouping by category, discussing similarities among authors in the same category, and contextualizing extensively within existing literature.

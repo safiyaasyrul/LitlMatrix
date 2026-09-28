@@ -344,6 +344,9 @@ export default function App() {
           setChecklist(saved.checklist ?? initialPrismaChecklist);
           setPrismaSChecklist(saved.prismaSChecklist ?? initialPrismaSChecklist);
           setRosesChecklist(saved.rosesChecklist ?? initialRosesChecklist);
+          if (saved.prismaOverrides) {
+            setPrismaOverrides(saved.prismaOverrides);
+          }
         }
         hydrationReady.current = true;
       }).catch(() => { hydrationReady.current = true; });
@@ -361,11 +364,12 @@ export default function App() {
         body: JSON.stringify({ snapshot: {
           protocol, records, dupesRemoved, screening, characteristics, synthesis,
           discussion, checklist, prismaSChecklist, rosesChecklist, citationStyle,
+          prismaOverrides,
         } }),
       }).catch(() => undefined);
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [protocol, records, dupesRemoved, screening, characteristics, synthesis, discussion, checklist, prismaSChecklist, rosesChecklist, citationStyle]);
+  }, [protocol, records, dupesRemoved, screening, characteristics, synthesis, discussion, checklist, prismaSChecklist, rosesChecklist, citationStyle, prismaOverrides]);
 
   // Derived included records
   const includedRecords = useMemo(() => {
@@ -415,6 +419,7 @@ export default function App() {
       manualOverrides: prismaOverrides,
       reviewId: protocol.title ? `lm_${protocol.title.toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 20)}` : "lm_systematic_review",
       defaultSource: protocol.informationSources?.[0]?.name || "Scopus",
+      informationSources: protocol.informationSources,
     });
   }, [records, dupesRemoved, screening, characteristics, synthesis, prismaOverrides, protocol]);
 
@@ -794,7 +799,7 @@ export default function App() {
           {activeStage === 5 && (
             <>
               <StepGuidance step={5} title="Upload Records" whatToDo="Upload the exported RIS, BibTeX or CSV files from your database searches." whatInfoIsRequired="Exported citation files." whatHappensNext="Run Deduplication." />
-              <RecordsImport records={records} onUpdateRecords={setRecords} dupesRemoved={dupesRemoved} onUpdateDupesRemoved={setDupesRemoved} onAutoSyncAllStagesFromRecords={handleAutoSyncAllStagesFromRecords} />
+              <RecordsImport records={records} onUpdateRecords={setRecords} dupesRemoved={dupesRemoved} onUpdateDupesRemoved={setDupesRemoved} onAutoSyncAllStagesFromRecords={handleAutoSyncAllStagesFromRecords} protocol={protocol} onUpdateProtocol={setProtocol} />
             </>
           )}
 
@@ -802,7 +807,7 @@ export default function App() {
           {activeStage === 6 && (
             <>
               <StepGuidance step={6} title="Deduplicate" whatToDo="Review and confirm duplicate removal." whatInfoIsRequired="Uploaded records." whatHappensNext="Proceed to Screen Studies." />
-              <RecordsImport records={records} onUpdateRecords={setRecords} dupesRemoved={dupesRemoved} onUpdateDupesRemoved={setDupesRemoved} onAutoSyncAllStagesFromRecords={handleAutoSyncAllStagesFromRecords} />
+              <RecordsImport records={records} onUpdateRecords={setRecords} dupesRemoved={dupesRemoved} onUpdateDupesRemoved={setDupesRemoved} onAutoSyncAllStagesFromRecords={handleAutoSyncAllStagesFromRecords} protocol={protocol} onUpdateProtocol={setProtocol} />
             </>
           )}
 
@@ -842,7 +847,15 @@ export default function App() {
           {activeStage === 11 && (
             <>
               <StepGuidance step={11} title="PRISMA 2020" whatToDo="Review and confirm the automatically generated PRISMA flow diagram." whatInfoIsRequired="Screening and deduplication data." whatHappensNext="Generate Synthesis and Discussion." />
-              <PrismaDiagram data={prismaFlowData} onUpdateOverrides={setPrismaOverrides} onRegenerate={() => setPrismaOverrides(undefined)} onNavigateToManuscript={() => setActiveStage(13)} />
+              <PrismaDiagram
+                data={prismaFlowData}
+                onUpdateOverrides={setPrismaOverrides}
+                onRegenerate={() => setPrismaOverrides(undefined)}
+                onNavigateToManuscript={() => setActiveStage(13)}
+                protocol={protocol}
+                onUpdateProtocol={setProtocol}
+                includedCount={includedRecords.length || records.length}
+              />
             </>
           )}
 

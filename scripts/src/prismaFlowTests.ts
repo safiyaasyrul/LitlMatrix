@@ -1,6 +1,7 @@
 import {
   calculatePrismaFlowData,
   validatePrismaFlowData,
+  improvisePrismaFlowData,
 } from "../../artifacts/litmatrix/src/utils/prismaFlowCalculator";
 import {
   selectDetailedEvidenceRecords,
@@ -315,6 +316,78 @@ console.log("==================================================\n");
 
   const issues = validatePrismaFlowData(invalidData);
   assert(issues.some((i) => i.field === "recordsExcluded" && i.type === "error"), "Test 14.1: Validation catches recordsExcluded > recordsScreened");
+}
+
+// ----------------------------------------------------
+// Test 15: Improvise PRISMA flow from Scopus & WoS counts down to n=50
+// ----------------------------------------------------
+{
+  const improvised = improvisePrismaFlowData({
+    scopusCount: 340,
+    wosCount: 210,
+    targetIncludedCount: 50,
+    includeEligibilityStage: true,
+  });
+
+  const totalDb = (improvised.databases || []).reduce((s, d) => s + d.recordsIdentified, 0);
+  assert(totalDb === 550, "Test 15.1: Improvised total identified = 340 + 210 = 550");
+  assert(improvised.duplicates === 99, "Test 15.2: Duplicates removed = 99 (~18% attrition)");
+  assert(improvised.recordsScreened === 451, "Test 15.3: Screened records = 550 - 99 = 451");
+  assert(improvised.studiesIncluded === 50, "Test 15.4: Target included studies strictly equals 50");
+  assert(improvised.studiesIncludedInSynthesis === 50, "Test 15.5: Studies in synthesis equals 50");
+
+  const reasonsSum = (improvised.exclusionReasons || []).reduce((s, r) => s + r.count, 0);
+  assert(
+    reasonsSum === (improvised.reportsExcluded || 0),
+    "Test 15.6: Exclusion reason breakdown strictly sums to reportsExcluded"
+  );
+
+  // Validate entire improvised PRISMA structure
+  const testFlow = calculatePrismaFlowData({
+    records: makeRecords(50),
+    manualOverrides: improvised,
+  });
+  const issues = validatePrismaFlowData(testFlow);
+  assert(issues.filter((i) => i.type === "error").length === 0, "Test 15.7: Zero validation errors in 4-stage improvised PRISMA flow");
+}
+
+// ----------------------------------------------------
+// Test 16: Improvise PRISMA flow (3-Stage direct screening)
+// ----------------------------------------------------
+{
+  const improvised3Stage = improvisePrismaFlowData({
+    scopusCount: 280,
+    wosCount: 170,
+    targetIncludedCount: 50,
+    includeEligibilityStage: false,
+  });
+
+  assert(improvised3Stage.reportsSought === null, "Test 16.1: 3-stage reportsSought is null");
+  assert(improvised3Stage.studiesIncluded === 50, "Test 16.2: 3-stage studiesIncluded = 50");
+
+  const testFlow = calculatePrismaFlowData({
+    records: makeRecords(50),
+    manualOverrides: improvised3Stage,
+  });
+  const issues = validatePrismaFlowData(testFlow);
+  assert(issues.filter((i) => i.type === "error").length === 0, "Test 16.3: Zero validation errors in 3-stage improvised PRISMA flow");
+}
+
+// ----------------------------------------------------
+// Test 17: Information sources search yields auto-population
+// ----------------------------------------------------
+{
+  const prisma = calculatePrismaFlowData({
+    records: makeRecords(50),
+    informationSources: [
+      { name: "Scopus", recordsRetrieved: 340, lastSearchedDate: "2026-08-20" },
+      { name: "Web of Science Core Collection", recordsRetrieved: 210, lastSearchedDate: "2026-08-20" },
+    ],
+  });
+
+  assert(prisma.identification.databases.length === 2, "Test 17.1: Databases list populated from informationSources");
+  assert(prisma.identification.databases[0].recordsIdentified === 340, "Test 17.2: Scopus count = 340 from informationSources");
+  assert(prisma.identification.databases[1].recordsIdentified === 210, "Test 17.3: WoS count = 210 from informationSources");
 }
 
 console.log("\n==================================================");

@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import { getAuth, clerkClient } from "@clerk/express";
+import { getAuth } from "@clerk/express";
 
 export type AuthUser = {
   subject: string;

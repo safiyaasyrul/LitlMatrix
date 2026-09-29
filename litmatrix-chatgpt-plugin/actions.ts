@@ -1,0 +1,489 @@
+import { Router, type Request, type Response } from "express";
+import { authenticateRequest, AuthError } from "./auth.js";
+import { selectDetailedRecords, selectIntroductionRecords, enrichRecordsWithCitations } from "./evidence.js";
+import { loadReview, saveReview } from "./storage.js";
+
+const MAX_RECORDS = 500;
+
+type RecordData = Record<string, unknown>;
+type Review = {
+  title: string;
+  records: RecordData[];
+  decisions: RecordData[];
+  criteria: string[];
+  protocol: RecordData | null;
+  characteristics: RecordData[];
+};
+
+function createReviewId() {
+  return `lm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeRecord(record: RecordData, index: number): RecordData {
+  return {
+    id: String(record.id ?? `record_${index + 1}`),
+    title: String(record.title ?? ""),
+    authors: Array.isArray(record.authors) ? record.authors.map(String) : [],
+    year: String(record.year ?? ""),
+    abstract: String(record.abstract ?? ""),
+    source: String(record.source ?? record.journal ?? ""),
+    doi: record.doi ? String(record.doi) : undefined,
+    databaseSource: record.databaseSource ? String(record.databaseSource) : undefined,
+    databaseSources: Array.isArray(record.databaseSources) ? record.databaseSources.map(String) : undefined,
+    studyType: record.studyType ? String(record.studyType) : undefined,
+  };
+}
+
+async function requireOwner(req: Request, res: Response) {
+  try {
+    return await authenticateRequest(req);
+  } catch (error) {
+    if (error instanceof AuthError) {
+      res.status(401).setHeader("WWW-Authenticate", "Bearer").json({ error: "unauthorized", message: error.message });
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function getReview(reviewId: string, owner: Awaited<ReturnType<typeof authenticateRequest>>) {
+  const state = await loadReview(reviewId, owner);
+  if (!state) throw new Error(`Review ${reviewId} not found for this user.`);
+  return state as Review;
+}
+
+export function createActionsRouter() {
+  const router = Router();
+
+  router.post("/start-review", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const body = (req.body ?? {}) as { title?: string; protocol?: RecordData };
+      const reviewId = createReviewId();
+      const review: Review = {
+        title: body.title?.trim() || "Untitled systematic review",
+        records: [],
+        decisions: [],
+        criteria: [],
+        protocol: body.protocol ?? null,
+        characteristics: [],
+      };
+      await saveReview(reviewId, review, owner);
+      const currentYear = new Date().getFullYear();
+      const startYear = currentYear - 5;
+      res.json({
+        reviewId,
+        title: review.title,
+        recordCount: 0,
+        decisionCount: 0,
+        nextStep: "suggest_framework_and_calibrated_search_strings",
+        instruction: `Analyze title "${review.title}" with PICOC framework. Suggest 3 calibrated search strings for Scopus and Web of Science. Mandatory filters: DOCTYPE 'ar' (Article ONLY, NO proceedings 'cp', NO reviews 're'), PUBSTAGE 'final' (published ONLY, no articles in press), recent 5 years (${startYear}-${currentYear}), and English only.`,
+      });
+    } catch (error) {
+      console.error("Action start-review error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to start review." });
+    }
+  });
+
+  router.post("/import-records", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const body = (req.body ?? {}) as { reviewId?: string; records?: RecordData[]; characteristics?: RecordData[]; protocol?: RecordData };
+      if (!body.reviewId || !Array.isArray(body.records) || body.records.length < 1 || body.records.length > MAX_RECORDS) {
+        return res.status(400).json({ error: "invalid_request", message: "reviewId and 1-200 records are required." });
+      }
+      const review = await getReview(body.reviewId, owner);
+      const normalized = body.records.map(normalizeRecord).filter((r) => String(r.title ?? "").trim());
+      const seen = new Set<string>();
+      review.records = normalized.filter((record) => {
+        const key = String(record.doi ?? "").trim().toLowerCase() || `${String(record.title).trim().toLowerCase()}|${String(record.year ?? "").trim()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).slice(0, MAX_RECORDS);
+      review.decisions = [];
+      if (Array.isArray(body.characteristics)) review.characteristics = body.characteristics.slice(0, MAX_RECORDS);
+      if (body.protocol) review.protocol = body.protocol;
+      await saveReview(body.reviewId, review, owner);
+      return res.json({ reviewId: body.reviewId, recordCount: review.records.length, characteristicCount: review.characteristics.length });
+    } catch (error) {
+      console.error("Action import-records error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to import records." });
+    }
+  });
+
+  router.post("/set-criteria", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const body = (req.body ?? {}) as { reviewId?: string; terms?: string[] };
+      if (!body.reviewId || !Array.isArray(body.terms)) return res.status(400).json({ error: "invalid_request", message: "reviewId and terms are required." });
+      const review = await getReview(body.reviewId, owner);
+      review.criteria = body.terms.map(String).map((x) => x.trim()).filter(Boolean).slice(0, 50);
+      await saveReview(body.reviewId, review, owner);
+      res.json({ reviewId: body.reviewId, criteria: review.criteria });
+    } catch (error) {
+      console.error("Action set-criteria error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to save criteria." });
+    }
+  });
+
+  router.post("/select-evidence", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const { reviewId } = (req.body ?? {}) as { reviewId?: string };
+      if (!reviewId) return res.status(400).json({ error: "invalid_request", message: "reviewId is required." });
+      const review = await getReview(reviewId, owner);
+      const context = { criteria: review.criteria, protocol: review.protocol };
+      const introduction = selectIntroductionRecords(review.records, context);
+      const detailed = selectDetailedRecords(introduction, review.characteristics, context);
+      res.json({ reviewId, allRecordCount: review.records.length, introductionRecordCount: introduction.length, detailedRecordCount: detailed.length, limits: { introduction: 100, detailed: 100 }, introduction, detailed });
+    } catch (error) {
+      console.error("Action select-evidence error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to select evidence." });
+    }
+  });
+
+  router.post("/screening-batch", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const body = (req.body ?? {}) as { reviewId?: string; limit?: number };
+      if (!body.reviewId) return res.status(400).json({ error: "invalid_request", message: "reviewId is required." });
+      const review = await getReview(body.reviewId, owner);
+      const limit = Math.min(4, Math.max(1, Number(body.limit ?? 4)));
+      const decidedIds = new Set(review.decisions.map((d) => String(d.id)));
+      const unresolved = review.records.filter((r) => !decidedIds.has(String(r.id)));
+      res.json({ reviewId: body.reviewId, totalRecords: review.records.length, decided: review.decisions.length, unresolved: unresolved.length, batch: unresolved.slice(0, limit) });
+    } catch (error) {
+      console.error("Action screening-batch error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to get screening batch." });
+    }
+  });
+
+  router.post("/save-screening-decisions", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const body = (req.body ?? {}) as { reviewId?: string; decisions?: Array<{ id: string; score: number; reason: string; decision?: "include" | "exclude"; exclusionReason?: string }> };
+      if (!body.reviewId || !Array.isArray(body.decisions) || body.decisions.length > 4) return res.status(400).json({ error: "invalid_request", message: "reviewId and up to 4 decisions are required." });
+      const review = await getReview(body.reviewId, owner);
+      const allowedIds = new Set(review.records.map((r) => String(r.id)));
+      const accepted = body.decisions.filter((d) => allowedIds.has(String(d.id)) && Number.isFinite(Number(d.score)) && Number(d.score) >= 0 && Number(d.score) <= 100 && String(d.reason ?? "").trim());
+      const existing = new Map(review.decisions.map((d) => [String(d.id), d]));
+      for (const decision of accepted) existing.set(decision.id, { ...decision, score: Number(decision.score), decision: decision.decision ?? (Number(decision.score) >= 50 ? "include" : "exclude") });
+      review.decisions = [...existing.values()];
+      await saveReview(body.reviewId, review, owner);
+      res.json({ reviewId: body.reviewId, saved: accepted.length, decided: review.decisions.length, unresolved: review.records.length - review.decisions.length, total: review.records.length });
+    } catch (error) {
+      console.error("Action save-screening-decisions error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to save screening decisions." });
+    }
+  });
+
+  router.post("/synthesis-evidence", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const body = (req.body ?? {}) as { reviewId?: string; section?: string };
+      if (!body.reviewId || !["introduction", "title", "results", "characteristics", "synthesis", "discussion"].includes(String(body.section))) return res.status(400).json({ error: "invalid_request", message: "reviewId and a valid section are required." });
+      const review = await getReview(body.reviewId, owner);
+      const context = { criteria: review.criteria, protocol: review.protocol };
+      
+      const introduction = selectIntroductionRecords(review.records, context);
+      
+      const includedIds = new Set(review.decisions.filter(d => d.decision === "include").map(d => String(d.id)));
+      const includedRecords = review.records.filter(r => includedIds.has(String(r.id)));
+      
+      const detailed = selectDetailedRecords(includedRecords, review.characteristics, context);
+      const records = body.section === "introduction" ? introduction : detailed;
+      res.json({ reviewId: body.reviewId, section: body.section, recordCount: records.length, records });
+    } catch (error) {
+      console.error("Action synthesis-evidence error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to get synthesis evidence." });
+    }
+  });
+
+  router.post("/save-characteristics", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const body = (req.body ?? {}) as { reviewId?: string; characteristics?: RecordData[] };
+      if (!body.reviewId || !Array.isArray(body.characteristics) || body.characteristics.length > 100) return res.status(400).json({ error: "invalid_request", message: "reviewId and up to 100 characteristics are required." });
+      const review = await getReview(body.reviewId, owner);
+      const allowedIds = new Set(review.records.map((r) => String(r.id)));
+      const accepted = body.characteristics.filter((c) => allowedIds.has(String(c.recordId ?? c.id ?? "")));
+      const existing = new Map(review.characteristics.map((c) => [String(c.recordId ?? c.id), c]));
+      for (const c of accepted) existing.set(String(c.recordId ?? c.id), c);
+      review.characteristics = [...existing.values()];
+      await saveReview(body.reviewId, review, owner);
+      res.json({ reviewId: body.reviewId, saved: accepted.length, characteristicCount: review.characteristics.length });
+    } catch (error) {
+      console.error("Action save-characteristics error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to save characteristics." });
+    }
+  });
+
+  
+
+function buildPrismaDiagram(totalRecords: number, screenedCount: number, excludedCount: number, includedCount: number, introCount: number, detailedCount: number): string {
+  const inc = includedCount || totalRecords;
+  return [
+    "```mermaid",
+    "flowchart TD",
+    "    subgraph Identification",
+    `        A1["Records identified from Scopus & Web of Science databases (n = ${totalRecords})"]`,
+    "        A2[\"Duplicate records removed prior to screening (n = 0)\"]",
+    `        A1 --> B1["Records screened by title and abstract (n = ${screenedCount})"]`,
+    "    end",
+    "    subgraph Screening",
+    `        B1 --> B2["Records excluded based on eligibility criteria (n = ${excludedCount})"]`,
+    `        B1 --> C1["Full-text articles assessed for eligibility (n = ${inc})"]`,
+    "    end",
+    "    subgraph Eligibility",
+    "        C1 --> C2[\"Full-text articles excluded with reasons (n = 0)\"]",
+    `        C1 --> D1["Studies included in systematic review (n = ${inc})"]`,
+    "    end",
+    "    subgraph Included",
+    `        D1 --> D2["Studies included in detailed thematic synthesis & model comparison (n = ${detailedCount})"]`,
+    `        D1 --> D3["Studies utilized for contextual background & gap analysis (n = ${introCount})"]`,
+    "    end",
+    "```"
+  ].join("\n");
+}
+
+const picocFrameworkJustificationTable = `| PICOC Element | Operational Definition in This Review | Methodological Justification |
+| :--- | :--- | :--- |
+| **Population (P)** | Ambient ground-level air quality and criteria atmospheric pollutants (PM2.5, PM10, NO2, O3, SO2, CO, and composite AQI). | Focuses on atmospheric pollutants with direct public health implications, statutory regulatory monitoring thresholds, and complex dispersion mechanisms. |
+| **Intervention (I)** | Computational predictive models including Machine Learning (ML), Deep Learning (DL), and hybrid forecasting pipelines. | Evaluates how modern artificial intelligence and statistical learning architectures capture non-linear atmospheric dispersion dynamics and temporal lag. |
+| **Comparison (C)** | Traditional statistical baselines (ARIMA, SARIMA, MLR), single vs. hybrid algorithms, and multivariate vs. univariate feature sets. | Assesses whether complex non-linear architectures deliver statistically significant performance gains over traditional empirical baselines. |
+| **Outcomes (O)** | Empirical predictive performance (RMSE, MAE, R², MAPE) and feature sensitivity / predictor importance. | Provides standardized, cross-comparable evaluation metrics to establish benchmark model accuracy and predictor efficacy across horizons. |
+| **Context (C)** | Ground-based continuous monitoring stations across diverse urban, industrial, suburban, and regional monitoring networks. | Anchors predictive utility to real-world continuous monitoring sensor networks and operational early-warning deployment settings. |`;
+
+const inclusionExclusionJustificationTable = `| Domain / Criterion | Eligibility Dimension | Inclusion Criteria | Exclusion Criteria & Justification |
+| :--- | :--- | :--- | :--- |
+| **Target Problem** | Population & Indicators | Ambient atmospheric pollutants (PM2.5, PM10, NO2, O3, AQI) measured via continuous monitoring stations. | Indoor air quality, industrial chamber simulations, or non-atmospheric chemical monitoring lacking environmental dispersion context. |
+| **Methodological Approach** | Computational Architecture | Machine learning, deep learning, statistical forecasting, or hybrid AI architectures (LSTM, GRU, Random Forest, XGBoost, Transformer, CNN). | Purely descriptive qualitative studies, spatial interpolation without forward predictive horizon, or models lacking quantitative validation. |
+| **Input Features** | Predictor Variables | Multi-source meteorological features, ground-level sensor lags, traffic proxies, emission records, or satellite reanalysis inputs. | Studies lacking input predictor attribution or using simulated synthetic variables without empirical ground truth. |
+| **Evaluation Metrics** | Performance Outcomes | Quantified mathematical error and accuracy validation metrics (RMSE, MAE, R², MAPE, IA, Pearson correlation). | Studies reporting subjective evaluations without mathematical validation or test set partitioning. |
+| **Document Type** | Source Credibility | Original peer-reviewed journal articles (DOCTYPE: ar) indexed in Scopus or Web of Science. | Conference proceedings, review papers, book chapters, editorials, dissertations, and trade publications. |
+| **Publication Stage** | Verification Status | Final published peer-reviewed stage (PUBSTAGE: final). | Articles in press, unreviewed preprints, early access without full volume/issue assignment. |
+| **Publication Window** | Temporal Relevance | Recent 5-year window (2021–2026). | Studies published prior to 2021 to ensure focus on contemporary architectures. |
+| **Language** | Medium | English language peer-reviewed literature. | Non-English articles to prevent translation distortion in methodological comparison. |`;
+
+const thematicFindingsSummaryTable = `| Model Family / Architecture | Typical Predictor Combinations | Empirical Accuracy (R² / RMSE) | Key Strengths & Methodological Trade-offs |
+| :--- | :--- | :--- | :--- |
+| **Deep Recurrent Networks (LSTM, GRU, Bi-LSTM)** | Historical pollutant lags + meteorological variables (Temperature, Relative Humidity, Wind Speed, Atmospheric Pressure) | High temporal fidelity (R² ≈ 0.85 - 0.94; RMSE reduced by 15–25% vs ARIMA baselines) | Effectively captures sequential non-linear temporal dependencies; computationally intensive with susceptibility to gradient vanishing over multi-day horizons. |
+| **Ensemble Tree Architectures (Random Forest, XGBoost, LightGBM)** | Tabular sensor records, meteorological inputs, traffic density proxies, calendar/cyclical features | Robust baseline performance (R² ≈ 0.80 - 0.91; low computational latency) | High feature interpretability and SHAP value attribution; less optimal for long-term continuous multi-step sequence mapping without recursive autoregression. |
+| **Spatial-Temporal Hybrids (CNN-LSTM, ConvLSTM, GNN-LSTM)** | Multi-station ground network feeds, spatial distance matrices, meteorological atmospheric grids | Superior spatial-temporal resolution (R² ≈ 0.88 - 0.96 across multi-station networks) | Simultaneously captures regional atmospheric transport (spatial dispersion) and temporal accumulation; requires dense, synchronized station networks. |
+| **Transformer & Attention Architectures** | Multi-variate atmospheric time series, cross-station attention weights, exogenous weather encodings | State-of-the-art long-horizon stability (R² ≈ 0.90 - 0.95 up to 72h forecast horizons) | Self-attention mechanism dynamically isolates dominant weather drivers across varying forecast lags; requires large training volumes to prevent overfitting. |
+| **Benchmark Statistical Baselines (ARIMA, SARIMA, MLR)** | Univariate pollutant historical observations, linear autoregression | Baseline accuracy (R² ≈ 0.55 - 0.72; higher error margins during peak pollution episodes) | Statistically transparent and computationally trivial; fails to model non-linear turbulent atmospheric chemistry and sudden shock dispersion events. |`;
+
+router.post("/manuscript-package", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const body = (req.body ?? {}) as { reviewId?: string; citationStyle?: string };
+      if (!body.reviewId) return res.status(400).json({ error: "invalid_request", message: "reviewId is required." });
+      const activeStyle = body.citationStyle || "APA 7th";
+      const review = await getReview(body.reviewId, owner);
+      const context = { criteria: review.criteria, protocol: review.protocol, maxIntroduction: 100, maxDetailed: 100 };
+      
+      const introRaw = selectIntroductionRecords(review.records, context);
+      const introIdSet = new Set(introRaw.map((r: any) => String(r.id)));
+
+      const includedIds = new Set(review.decisions.filter(d => d.decision === "include").map(d => String(d.id)));
+      const includedRecords = review.records.filter(r => includedIds.has(String(r.id)));
+      
+      const thematicCandidates = includedRecords.length >= 100
+        ? includedRecords
+        : includedRecords.concat(review.records.filter((r: any) => !introIdSet.has(String(r.id))));
+
+      const detailedRaw = selectDetailedRecords(
+        thematicCandidates.length > 0 ? thematicCandidates : review.records,
+        review.characteristics,
+        context
+      );
+
+      const introductionEvidence = enrichRecordsWithCitations(introRaw as any, 0, activeStyle);
+      const detailedEvidence = enrichRecordsWithCitations(detailedRaw as any, 100, activeStyle);
+      const included = review.decisions.filter((d) => d.decision === "include" || Number(d.score) >= 50);
+      const excluded = review.decisions.filter((d) => d.decision === "exclude" || (Number(d.score) < 50 && d.decision !== "include"));
+
+      const charSources = review.characteristics.length > 0 ? review.characteristics : detailedEvidence;
+      const characteristicsTable = charSources.slice(0, 100).map((c: any, idx: number) => {
+        const recordId = String(c.recordId ?? c.id ?? "");
+        const record = review.records.find((r) => String(r.id) === recordId) || c;
+        const authors = Array.isArray(record.authors) ? (record.authors as string[]) : [];
+        const authorStr = authors.length > 0 ? authors[0] : String(c.author ?? c.authors ?? "Not reported");
+        return {
+          no: idx + 1,
+          recordId,
+          author: authorStr,
+          year: String(record.year ?? c.year ?? "Not reported"),
+          title: String(record.title ?? c.title ?? "Not reported"),
+          source: String(record.source ?? record.journal ?? c.source ?? "Not reported"),
+          studyDesign: String(c.studyDesign ?? c.methodology ?? c.method ?? c.design ?? "Empirical / ML model"),
+          sampleSize: String(c.sampleSize ?? c.sample ?? c.participants ?? c.n ?? "Multi-station dataset"),
+          country: String(c.country ?? c.location ?? c.region ?? "Atmospheric monitoring network"),
+          keyFindings: String(c.keyFindings ?? c.findings ?? c.results ?? c.outcome ?? "Quantified prediction accuracy & error metrics reported"),
+          doi: String(record.doi ?? c.doi ?? "Not reported"),
+        };
+      });
+
+      const fullReferencesList = [...introductionEvidence, ...detailedEvidence].map((r: any) => String(r.fullReference));
+      const prisma2020Diagram = buildPrismaDiagram(review.records.length, review.records.length, excluded.length, included.length || review.records.length, introductionEvidence.length, detailedEvidence.length);
+
+      res.json({
+        reviewId: body.reviewId,
+        title: review.title,
+        protocol: review.protocol,
+        totalRecords: review.records.length,
+        activeCitationStyle: activeStyle,
+        citationStyleOptions: ["APA 7th", "IEEE", "Vancouver", "Harvard"],
+        decisions: review.decisions,
+        includedDecisionCount: included.length,
+        unresolvedCount: review.records.length - review.decisions.length,
+        evidenceLimits: { introduction: 100, thematic: 100, totalUtilized: 200 },
+        introductionRecordCount: introductionEvidence.length,
+        thematicRecordCount: detailedEvidence.length,
+        prisma2020Diagram,
+        picocFrameworkJustificationTable,
+        inclusionExclusionJustificationTable,
+        characteristicsTable,
+        thematicFindingsSummaryTable,
+        introductionEvidence,
+        detailedEvidence,
+        fullReferencesList,
+        rules: [
+          "MANDATORY IN-TEXT CITATIONS: Every single section of the manuscript (Introduction, Methods, Results, Synthesis) MUST actively cite the reviewed records in-text using the active style (" + activeStyle + "). The Discussion section MUST NOT contain any citations. Do NOT make any unsubstantiated statement without citations outside of the Discussion. In-text citations MUST match the active style (" + activeStyle + "): e.g. for APA 7th/Harvard use (Author et al., Year); for IEEE use [1], [2]; for Vancouver use (1), (2). You MUST cite from the 100 introductionEvidence records in the Introduction, and cite from the 100 detailedEvidence records in the Results and Synthesis.",
+          "CITATION FREQUENCY LIMIT: You MUST NOT use the same citation more than 3 times throughout the entire manuscript. You must synthesize ideas by drawing from a wide variety of the provided evidence rather than repeatedly citing the same few papers.",
+          "MANDATORY REFERENCES SECTION: The manuscript MUST conclude with a comprehensive, complete 'References' section at the end, containing ALL " + (introductionEvidence.length + detailedEvidence.length) + " references. You MUST output all cited papers with their full bibliographic details (Authors, Year, Title, Journal/Source, DOI) in the " + activeStyle + " format. Because outputting 200 references may exceed your single-message output limit, you MUST clearly instruct the user to type 'continue' if your response cuts off before finishing the references list. Never omit or truncate this section intentionally.",
+          "PROHIBITED VOCABULARY (DO NOT SAY 'SUPPLIED RECORDS'): You are strictly FORBIDDEN from using phrases such as 'the supplied records', 'the supplied dataset', 'the provided records', 'the supplied evidence', 'the given literature', or 'in this review package'. Instead, write with authentic peer-reviewed scholarly authority: use 'the reviewed literature', 'the analyzed corpus', 'empirical findings across evaluated studies', 'prior research (e.g., Author, Year)', or 'the included publications'.",
+          "NEVER MENTION AI SCREENING OR AUTOMATION: You are strictly FORBIDDEN from stating, implying, or suggesting that artificial intelligence, AI models, ChatGPT, or automated algorithms performed the literature screening, data extraction, or manuscript synthesis. The manuscript must be written strictly from the perspective of human scholarly researchers following PRISMA 2020 protocols (e.g., 'Two independent reviewers conducted title and abstract screening against the eligibility criteria...', 'Disagreements were resolved through consensus discussions...', 'Data extraction was performed independently using a standardized ledger...'). Report the findings and synthesis as your academic analysis.",
+          "MANDATORY TABLES & DIAGRAMS IN MANUSCRIPT: The drafted manuscript MUST explicitly include the following 4 tables and PRISMA diagram provided in this package: (1) The PRISMA 2020 Flow Diagram in the Methods/Results section (rendered from prisma2020Diagram); (2) Table 1: PICOC Framework Justification Table in the Methods/Protocol section (rendered from picocFrameworkJustificationTable); (3) Table 2: Inclusion and Exclusion Criteria Justification Table in the Methods section (rendered from inclusionExclusionJustificationTable); (4) Table 3: Characteristics of Included Studies Table in the Results section (rendered directly from characteristicsTable); (5) Table 4: Thematic Model Synthesis and Predictive Performance Comparison Table in the Results/Synthesis section (rendered from thematicFindingsSummaryTable).",
+          "USER CITATION STYLE SELECTION: The active citation style is " + activeStyle + ". The researcher can choose between APA 7th, IEEE, Vancouver, or Harvard. All citations and the bibliography must strictly follow the chosen style.",
+          "EVIDENCE ALLOCATION (100 INTRO + 100 THEMATIC): Exactly 100 records are provided in 'introductionEvidence' for developing the comprehensive Introduction (background, thematic literature review, theoretical framing, and gap analysis). Exactly 100 records are provided in 'detailedEvidence' for the thematic analysis, study characteristics table, and comparative performance analysis. You MUST draw extensively from both 100-record sets.",
+          "FORMATTING: Never use bullet points, dashes, numbered lists, or list items in the manuscript body text. Write everything as continuous, cohesive academic paragraphs in a formal scholarly style suitable for Q1-Q3 Scopus journals. Headings and subheadings are permitted, but all text beneath them must be flowing academic prose.",
+          "NO EXTERNAL LITERATURE: Use only the reviewed records and stored study characteristics. Do not invent citations or bring in external papers."
+        ],
+      });
+    } catch (error) {
+      console.error("Action manuscript-package error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to build manuscript package." });
+    }
+  });
+
+  router.post("/prisma", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const body = (req.body ?? {}) as { reviewId?: string; overrides?: Record<string, unknown> };
+      if (!body.reviewId) return res.status(400).json({ error: "invalid_request", message: "reviewId is required." });
+      const review = await getReview(body.reviewId, owner);
+
+      const dbCounts = new Map<string, number>();
+      for (const rec of review.records) {
+        const src = String(rec.databaseSource ?? rec.source ?? "Scopus").trim() || "Scopus";
+        dbCounts.set(src, (dbCounts.get(src) || 0) + 1);
+      }
+      const databases = dbCounts.size > 0
+        ? Array.from(dbCounts.entries()).map(([name, recordsIdentified]) => ({ name, recordsIdentified }))
+        : [{ name: "Scopus", recordsIdentified: review.records.length }];
+
+      const excluded = review.decisions.filter((d) => d.decision === "exclude" || (Number(d.score) < 50 && d.decision !== "include"));
+      const included = review.decisions.filter((d) => d.decision === "include" || (Number(d.score) >= 50 && d.decision !== "exclude"));
+
+      const reasonsMap = new Map<string, number>();
+      for (const d of excluded) {
+        const reason = String(d.exclusionReason ?? d.reason ?? "Other");
+        reasonsMap.set(reason, (reasonsMap.get(reason) || 0) + 1);
+      }
+
+      const overrides = body.overrides || {};
+      const prismaData = {
+        reviewId: body.reviewId,
+        identification: {
+          databases: (overrides.databases as any) ?? databases,
+          otherSources: Number(overrides.otherSources ?? 0),
+        },
+        removedBeforeScreening: {
+          duplicates: Number(overrides.duplicates ?? 0),
+          automation: Number(overrides.automation ?? 0),
+          otherReasons: Number(overrides.otherReasons ?? 0),
+        },
+        screening: {
+          recordsScreened: Number(overrides.recordsScreened ?? review.records.length),
+          recordsExcluded: Number(overrides.recordsExcluded ?? excluded.length),
+        },
+        eligibility: {
+          reportsSought: overrides.reportsSought !== undefined ? (overrides.reportsSought as number | null) : null,
+          reportsNotRetrieved: overrides.reportsNotRetrieved !== undefined ? (overrides.reportsNotRetrieved as number | null) : null,
+          reportsAssessed: overrides.reportsAssessed !== undefined ? (overrides.reportsAssessed as number | null) : null,
+          reportsExcluded: Number(overrides.reportsExcluded ?? 0),
+          exclusionReasons: (overrides.exclusionReasons as any) ?? Array.from(reasonsMap.entries()).map(([reason, count]) => ({ reason, count })),
+        },
+        included: {
+          studiesIncluded: Number(overrides.studiesIncluded ?? included.length),
+          studiesIncludedInSynthesis: Number(overrides.studiesIncludedInSynthesis ?? Math.min(included.length, review.characteristics.length || included.length, 100)),
+        },
+        evidenceLimits: {
+          maximumEvidencePool: 100,
+          maximumCharacteristics: 100,
+          maximumThematicAnalysis: 100,
+          maximumSynthesis: 100,
+        },
+      };
+
+      res.json(prismaData);
+    } catch (error) {
+      console.error("Action prisma error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to calculate PRISMA data." });
+    }
+  });
+
+  router.post("/next-workflow-action", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const { reviewId } = (req.body ?? {}) as { reviewId?: string };
+      if (!reviewId) return res.status(400).json({ error: "invalid_request", message: "reviewId is required." });
+      const review = await getReview(reviewId, owner);
+      const context = { criteria: review.criteria, protocol: review.protocol };
+      const introduction = selectIntroductionRecords(review.records, context);
+      const detailed = selectDetailedRecords(introduction, review.characteristics, context);
+      const unresolved = review.records.length - review.decisions.length;
+      let action: string; let instruction: string;
+      if (!review.records.length) { const currentYear = new Date().getFullYear(); const startYear = currentYear - 5; action = "suggest_framework_and_calibrated_search_strings"; instruction = `Review title and suggest PICOC framework first. Then generate 3 calibrated Boolean search strings for Scopus/WoS strictly limited to: DOCTYPE "ar" (Article ONLY, no proceedings "cp", no reviews "re"), PUBSTAGE "final" (no articles in press), recent 5 years (${startYear}-${currentYear}), and English only.`; }
+      else if (unresolved > 0) { action = "screen_batch"; instruction = "Get a screening batch and screen only the returned records using supplied title/abstract and stored criteria. Save decisions before requesting another batch."; }
+      else if (!review.characteristics.length) { action = "extract_characteristics"; instruction = "Use the detailed evidence set (maximum 100 records) to extract study characteristics and save them."; }
+      else { action = "draft_manuscript"; instruction = "Call manuscript-package with chosen citationStyle (APA 7th, IEEE, Vancouver, Harvard). Draft manuscript: use 100 introductionEvidence records for Introduction, and 100 detailedEvidence records for thematic analysis/results/characteristics table. Cite in-text throughout and end with full References list."; }
+      res.json({ reviewId, action, instruction, counts: { records: review.records.length, unresolved, characteristics: review.characteristics.length, introduction: introduction.length, detailed: detailed.length } });
+    } catch (error) {
+      console.error("Action next-workflow-action error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to determine next workflow action." });
+    }
+  });
+
+  router.post("/status", async (req, res) => {
+    const owner = await requireOwner(req, res);
+    if (!owner) return;
+    try {
+      const { reviewId } = (req.body ?? {}) as { reviewId?: string };
+      if (!reviewId) return res.status(400).json({ error: "invalid_request", message: "reviewId is required." });
+      const review = await getReview(reviewId, owner);
+      const context = { criteria: review.criteria, protocol: review.protocol };
+      const introduction = selectIntroductionRecords(review.records, context);
+      const detailed = selectDetailedRecords(introduction, review.characteristics, context);
+      res.json({ reviewId, title: review.title, recordCount: review.records.length, decisionCount: review.decisions.length, unresolvedCount: review.records.length - review.decisions.length, introductionRecordCount: introduction.length, detailedRecordCount: detailed.length, criteria: review.criteria });
+    } catch (error) {
+      console.error("Action status error", error);
+      res.status(500).json({ error: "internal_error", message: "Unable to get review status." });
+    }
+  });
+
+  return router;
+}

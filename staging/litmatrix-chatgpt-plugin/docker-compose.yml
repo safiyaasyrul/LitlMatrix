@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: litmatrix
+      POSTGRES_USER: litmatrix
+      POSTGRES_PASSWORD: change-this-password
+    volumes:
+      - litmatrix_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litmatrix -d litmatrix"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  mcp:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 3001
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://litmatrix:change-this-password@postgres:5432/litmatrix
+      ALLOWED_ORIGIN: https://chatgpt.com
+      AUTH_ISSUER: https://YOUR-IDP.example.com
+      AUTH_AUDIENCE: https://YOUR-LITMATRIX-MCP.example.com/mcp
+      AUTH_JWKS_URL: https://YOUR-IDP.example.com/.well-known/jwks.json
+      AUTH_AUTHORIZATION_SERVER: https://YOUR-IDP.example.com
+      AUTH_AUTHORIZATION_ENDPOINT: https://YOUR-IDP.example.com/oauth/authorize
+      AUTH_TOKEN_ENDPOINT: https://YOUR-IDP.example.com/oauth/token
+      AUTH_SCOPES: openid profile email
+      ALLOW_ANONYMOUS_DEV: "false"
+    ports:
+      - "3001:3001"
+volumes:
+  litmatrix_pg:

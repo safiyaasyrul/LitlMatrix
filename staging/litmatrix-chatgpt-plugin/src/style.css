@@ -1,0 +1,10 @@
+:root { font-family: system-ui, sans-serif; color: #202124; background: #fff; }
+body { margin: 0; padding: 18px; }
+h1 { font-size: 20px; margin: 0 0 8px; }
+.panel { display: grid; gap: 12px; max-width: 720px; }
+label { display: grid; gap: 6px; font-size: 13px; }
+input[type="text"], input[type="file"] { font: inherit; padding: 8px; border: 1px solid #c7c7c7; border-radius: 8px; box-sizing: border-box; width: 100%; }
+button { width: fit-content; padding: 9px 14px; border: 0; border-radius: 8px; cursor: pointer; background: #111; color: #fff; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.hint { font-size: 12px; line-height: 1.45; opacity: .75; }
+.counts { font-size: 13px; line-height: 1.6; }

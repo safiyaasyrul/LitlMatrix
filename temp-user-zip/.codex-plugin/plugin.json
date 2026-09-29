@@ -1,0 +1,18 @@
+{
+  "apps": "./.app.json",
+  "author": {
+    "name": "App developer"
+  },
+  "description": "Systematic literature review workflow for Scopus and Web of Science records, screening, evidence selection, study characteristics, synthesis, and manuscript generation.",
+  "interface": {
+    "capabilities": [],
+    "category": "Other",
+    "defaultPrompt": null,
+    "developerName": "App developer",
+    "displayName": "LitMatrix",
+    "longDescription": "Systematic literature review workflow for Scopus and Web of Science records, screening, evidence selection, study characteristics, synthesis, and manuscript generation.",
+    "shortDescription": "Systematic literature review workflow for Scopus and Web of Science records, screening, evidence selection, study characteristics, synthesis, and manuscript generation."
+  },
+  "name": "litmatrix-plugin-clean",
+  "version": "1.0.0"
+}

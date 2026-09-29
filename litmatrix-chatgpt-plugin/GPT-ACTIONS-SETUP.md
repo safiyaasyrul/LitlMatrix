@@ -33,9 +33,21 @@ In the GPT editor:
 3. Find **Actions**.
 4. Choose **Create new action**.
 5. Import the OpenAPI schema from the URL above, or paste its JSON.
-6. Choose **None** for authentication.
+6. Choose **OAuth** authentication.
+7. Enter the Clerk OAuth application's Client ID and Client Secret.
+8. Authorization URL:
+   `https://loyal-gelding-9175.clerk.accounts.dev/oauth/authorize`
+9. Token URL:
+   `https://loyal-gelding-9175.clerk.accounts.dev/oauth/token`
+10. Scope:
+    `openid profile email offline_access`
+11. Use the token exchange method required by the GPT editor (normally the standard authorization-code flow).
 
-## 4. GPT behavior
+## 4. Clerk callback URL
+
+The GPT Action editor will display a callback/redirect URL. Add that exact URL to the allowed redirect URIs for the Clerk OAuth application. Do not guess the callback URL.
+
+## 5. GPT behavior
 
 The GPT should:
 - use LitlMatrix actions for review state and evidence operations;

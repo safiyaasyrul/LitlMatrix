@@ -352,6 +352,11 @@ export default function App() {
       }).catch(() => { hydrationReady.current = true; });
   }, []);
 
+  const [prismaOverrides, setPrismaOverrides] = useState<PrismaFlowData["manualOverrides"] | undefined>(() => {
+    const saved = localStorage.getItem("slr_prisma_overrides_v1");
+    return saved ? JSON.parse(saved) : undefined;
+  });
+
   // PostgreSQL is the durable workspace copy; localStorage remains the
   // offline/migration cache used by the existing workbench.
   useEffect(() => {
@@ -393,11 +398,6 @@ export default function App() {
     });
     return acc;
   }, [records, screening]);
-
-  const [prismaOverrides, setPrismaOverrides] = useState<PrismaFlowData["manualOverrides"] | undefined>(() => {
-    const saved = localStorage.getItem("slr_prisma_overrides_v1");
-    return saved ? JSON.parse(saved) : undefined;
-  });
 
   useEffect(() => {
     if (!hydrationReady.current) return;

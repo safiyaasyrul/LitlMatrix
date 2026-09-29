@@ -395,7 +395,7 @@ export default function FullReviewReport({
   );
 
   md += `#### ${sub.title.replace(/^\d+(?:\.\d+)*\.?\s*/, "")}\n`;
-  md += `${formatEvidenceProse(sub.prose, supportingRecords.length ? supportingRecords : includedRecords)}\n\n`;
+  md += `${formatCitationText(sub.prose, supportingRecords.length ? supportingRecords : includedRecords, citationStyle)}\n\n`;
 });
 
     md += `## 4. Discussion\n\n`;
@@ -757,17 +757,8 @@ export default function FullReviewReport({
 
    ${(protocol.eligibilityCriteria.inclusion.length || protocol.eligibilityCriteria.exclusion.length) ? `
     <h2>Appendix A. Eligibility Criteria</h2>
-<<<<<<< HEAD
-    ${protocol.eligibilityCriteria.inclusion.length ? `<h3>A.1 Inclusion Criteria</h3><p>${formatCriteriaProse(protocol.eligibilityCriteria.inclusion, "inclusion")}</p>` : ""}
-    ${protocol.eligibilityCriteria.exclusion.length ? `<h3>A.2 Exclusion Criteria</h3><p>${formatCriteriaProse(protocol.eligibilityCriteria.exclusion, "exclusion")}</p>` : ""}
-=======
-    ${protocol.eligibilityCriteria.inclusion.length ? `<h3>A.1 Inclusion Criteria</h3><p>
-  ${protocol.eligibilityCriteria.inclusion.join(". ")}.
-</p>` : ""}
-    ${protocol.eligibilityCriteria.exclusion.length ? `<h3>A.2 Exclusion Criteria</h3><p>
-  ${protocol.eligibilityCriteria.enclusion.join(". ")}.
-</p>` : ""}
->>>>>>> c401df7b889f45bb193a2bcb326f6aaea95ef664
+    ${protocol.eligibilityCriteria.inclusion.length ? `<h3>A.1 Inclusion Criteria</h3><p>${protocol.eligibilityCriteria.inclusion.join(". ")}.</p>` : ""}
+    ${protocol.eligibilityCriteria.exclusion.length ? `<h3>A.2 Exclusion Criteria</h3><p>${protocol.eligibilityCriteria.exclusion.join(". ")}.</p>` : ""}
   ` : ""}
 
   ${protocol.searchStrategies.length ? `

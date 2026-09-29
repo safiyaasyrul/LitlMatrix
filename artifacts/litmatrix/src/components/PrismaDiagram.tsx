@@ -65,7 +65,7 @@ export default function PrismaDiagram({
   const [copiedNotification, setCopiedNotification] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
 
-  const targetIncluded = includedCount || data.included.studiesIncluded || 50;
+  const targetIncluded = includedCount || data.included.studiesIncluded || 100;
 
   // Search yields detection from protocol or data
   const scopusFromData = data.identification.databases.find((d) => /scopus/i.test(d.name))?.recordsIdentified;

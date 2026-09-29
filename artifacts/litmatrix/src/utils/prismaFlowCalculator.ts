@@ -52,7 +52,7 @@ export function improvisePrismaFlowData(options: ImprovisePrismaOptions): NonNul
     wosCount = 0,
     otherDatabases = [],
     otherSources = 0,
-    targetIncludedCount = 50,
+    targetIncludedCount = 100,
     includeEligibilityStage = true,
   } = options;
 

@@ -1,4 +1,5 @@
 import type { Request } from "express";
+import { getAuth } from "@clerk/express";
 
 export type AuthUser = {
   subject: string;
@@ -11,11 +12,32 @@ export function authConfigured() {
 }
 
 export async function authenticateRequest(
-  _req: Request,
+  req: Request,
 ): Promise<AuthUser> {
-  // Bypass Clerk completely as requested by the user
+  if (!authConfigured()) {
+    throw new AuthError(
+      "Clerk authentication is not configured.",
+    );
+  }
+
+  const auth = getAuth(req);
+
+  if (!auth.isAuthenticated) {
+    throw new AuthError(
+      "Clerk authentication failed.",
+    );
+  }
+
+  const subject = auth.userId;
+
+  if (!subject) {
+    throw new AuthError(
+      "Authenticated Clerk request has no subject.",
+    );
+  }
+
   return {
-    subject: "local-dummy-user",
+    subject,
   };
 }
 

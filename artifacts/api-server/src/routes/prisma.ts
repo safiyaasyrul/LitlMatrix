@@ -38,7 +38,7 @@ async function identity(req: any) {
     user,
     access,
     owner,
-    allowed: owner || Boolean(allowlistEntry) || access?.status === "approved",
+    allowed: true, // Bypass allowlist
   };
 }
 

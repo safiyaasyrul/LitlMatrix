@@ -69,20 +69,16 @@ function AdminAccess() {
   };
 
   const [requests, setRequests] = useState<any[]>([]);
-  const [allowlist, setAllowlist] = useState<any[]>([]);
   const [aiUsage, setAiUsage] = useState<AIUsageSummary | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
-  const [email, setEmail] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const load = () => {
     setUsageLoading(true);
     return Promise.all([
     fetch("/api/prisma/admin/access", { credentials: "same-origin" }).then((r) => r.ok ? r.json() : []),
-    fetch("/api/prisma/admin/allowlist", { credentials: "same-origin" }).then((r) => r.ok ? r.json() : []),
     fetch("/api/prisma/admin/ai-usage", { credentials: "same-origin" }).then((r) => r.ok ? r.json() : null),
-  ]).then(([nextRequests, nextAllowlist, nextAiUsage]) => {
+  ]).then(([nextRequests, nextAiUsage]) => {
     setRequests(nextRequests);
-    setAllowlist(nextAllowlist);
     setAiUsage(nextAiUsage);
   }).finally(() => {
     setUsageLoading(false);
@@ -175,28 +171,7 @@ function AdminAccess() {
             </div>
           )}
         </section>
-        <form className="flex gap-2" onSubmit={(event) => {
-          event.preventDefault();
-          fetch("/api/prisma/admin/allowlist", {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email }),
-          }).then((response) => {
-            if (!response.ok) throw new Error("Could not add email.");
-            setEmail("");
-            return load();
-          }).catch(() => undefined);
-        }}>
-          <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="customer@example.com" className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <button className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">Add</button>
-        </form>
-        <div className="mt-3 space-y-1">
-          {allowlist.map((entry) => <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2" key={entry.id}>
-            <span className="truncate text-sm">{entry.email}</span>
-            <button className="text-xs font-semibold text-rose-700" onClick={() => fetch(`/api/prisma/admin/allowlist/${entry.id}`, { method: "DELETE", credentials: "same-origin" }).then(load)}>Remove</button>
-          </div>)}
-        </div>
+
         {requests.length > 0 && <h3 className="mb-1 mt-4 border-t border-slate-200 pt-3 text-sm font-semibold">Access requests</h3>}
         {requests.map(({ request, user }) => <div className="flex items-center justify-between gap-3 border-t py-2" key={request.id}>
           <span className="text-sm">{user.email} ({request.status})</span>

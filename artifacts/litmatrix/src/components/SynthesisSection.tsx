@@ -369,7 +369,9 @@ WRITING RULES:
 
 15. CITE AND DISCUSS THE ACTUAL INCLUDED STUDIES by author and year (e.g., Smith et al., 2024). This exact format is REQUIRED for the manuscript engine to correctly process the references later.
 
-16. Do not prescribe, assume, or hard-code a citation style like APA or IEEE. Always use the (Author, Year) placeholder format.
+16. CITATION FREQUENCY LIMIT: You MUST NOT cite the same study more than 3 times throughout the synthesis. You must synthesize ideas by drawing from a wide variety of the provided evidence rather than repeatedly citing the same few papers.
+
+17. Do not prescribe, assume, or hard-code a citation style like APA or IEEE. Always use the (Author, Year) placeholder format.
 
 17. Preserve the study identity information (Author, Year) supplied with each record so that citations can be formatted later according to the citation style selected by the user.
 
